@@ -1,7 +1,7 @@
 import SingleEffect
 from Recipes import Potion
 
-VERSION = 3
+VERSION = 2
 
 VoidSalt_1 = Potion.fromName(Swiftness=3, Dexterity=2)
 VoidSalt_2 = Potion.fromName(Poison=1, Fire=1, Explosion=1, Lightning=1, Frost=1)

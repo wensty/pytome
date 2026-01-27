@@ -2,7 +2,6 @@
 from enum import IntEnum
 from collections import namedtuple
 
-
 NUMBER_OF_INGREDIENTS = 58
 NUMBER_OF_SALTS = 5
 _ingredientPrices = [
@@ -66,6 +65,66 @@ _ingredientPrices = [
     1438.4,
 ]
 
+_ingredientNames = [
+    "Windbloom",
+    "Featherbloom",
+    "Foggy Parasol",
+    "Fluffbloom",
+    "Whirlweed",
+    "Phantom Skirt",
+    "Cloud Crystal",
+    "Witch Mushroom",
+    "Thunder Thistle",
+    "Dream Beet",
+    "Shadow Chanterelle",
+    "Spellbloom",
+    "Mageberry",
+    "Arcane Crystal",
+    "Waterbloom",
+    "Icefruit",
+    "Tangleweed",
+    "Coldleaf",
+    "Kraken Mushroom",
+    "Watercap",
+    "Frost Sapphire",
+    "Lifeleaf",
+    "Goodberry",
+    "Druid's Rosemary",
+    "Moss Shroom",
+    "Healers Heather",
+    "Evergreen Fern",
+    "Life Crystal",
+    "Terraria",
+    "Dryad's Saddle",
+    "Poopshroom",
+    "Weirdshroom",
+    "Goldthorn",
+    "Mudshroom",
+    "Earth Pyrite",
+    "Stink Mushroom",
+    "Goblin Shroom",
+    "Marshroom",
+    "Hairy Banana",
+    "Thornstick",
+    "Grave Truffle",
+    "Plague Stibnite",
+    "Firebell",
+    "Sulphur Shelf",
+    "Lavaroot",
+    "Flameweed",
+    "Magma Morel",
+    "Dragon Pepper",
+    "Fire Citrine",
+    "Mad Mushroom",
+    "Bloodthorn",
+    "Terror Bud",
+    "Grasping Root",
+    "Boombloom",
+    "Lust Mushroom",
+    "Blood Ruby",
+    "Rainbow Cap",
+    "Fable Bismuth",
+]
 
 # TODO: _ingredientGrowPosition
 
@@ -135,6 +194,10 @@ class Ingredients(IntEnum):
     @property
     def price(self) -> float:
         return _ingredientPrices[self]
+
+    @property
+    def name(self) -> str:
+        return _ingredientNames[self]
 
 
 class Salts(IntEnum):
