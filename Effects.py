@@ -112,15 +112,7 @@ class Effects(IntEnum):
     def dull_reachable_tier(self, base: Union[int, PotionBases]) -> int:
         if isinstance(base, int):
             base = PotionBases(base)
-        return (
-            0
-            if not self.exists_in_base(base)
-            else 1
-            if abs(base_effects[base][self].angle) >= 72
-            else 2
-            if abs(base_effects[base][self].angle) >= 12
-            else 3
-        )
+        return 0 if not self.exists_in_base(base) else 1 if abs(base_effects[base][self].angle) >= 72 else 2 if abs(base_effects[base][self].angle) >= 12 else 3
 
 
 class EffectPosition:

@@ -229,11 +229,11 @@ class FilterApp:
 
         ttk.Label(selectors, text="Effect").grid(row=0, column=0, sticky=tk.W)
         ttk.Combobox(selectors, textvariable=self.effect_select, values=effect_names, width=24).grid(row=0, column=1, sticky=tk.W)
-        ttk.Button(
-            selectors,
-            text="Add to Required Effects",
-            command=lambda: _append_csv(self.require_effects, self.effect_select.get().strip()),
-        ).grid(row=0, column=2, padx=5, sticky=tk.W)
+        # ttk.Button(
+        #     selectors,
+        #     text="Add to Required Effects",
+        #     command=lambda: _append_csv(self.require_effects, self.effect_select.get().strip()),
+        # ).grid(row=0, column=2, padx=5, sticky=tk.W)
         ttk.Button(
             selectors,
             text="Add to Required Effects",
