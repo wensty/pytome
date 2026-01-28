@@ -1,9 +1,9 @@
-﻿from enum import IntEnum
+from enum import IntEnum
 from typing import Union
 
 NUMBER_OF_EFFECTS = 41
 
-effectBasePrices = [
+effect_base_prices = [
     100,
     130,
     200,
@@ -101,18 +101,26 @@ class Effects(IntEnum):
     __doc__ = "Enumeration class for effects."
 
     @property
-    def basePrice(self) -> int:
-        return effectBasePrices[self]
+    def base_price(self) -> int:
+        return effect_base_prices[self]
 
-    def existInBase(self, base: Union[int, PotionBases]) -> bool:
+    def exists_in_base(self, base: Union[int, PotionBases]) -> bool:
         if isinstance(base, int):
             base = PotionBases(base)
-        return self in BaseEffects[base].keys()
+        return self in base_effects[base].keys()
 
-    def dullReachableTier(self, base: Union[int, PotionBases]) -> int:
+    def dull_reachable_tier(self, base: Union[int, PotionBases]) -> int:
         if isinstance(base, int):
             base = PotionBases(base)
-        return 0 if not self.existInBase(base) else 1 if abs(BaseEffects[base][self].angle) >= 72 else 2 if abs(BaseEffects[base][self].angle) >= 12 else 3
+        return (
+            0
+            if not self.exists_in_base(base)
+            else 1
+            if abs(base_effects[base][self].angle) >= 72
+            else 2
+            if abs(base_effects[base][self].angle) >= 12
+            else 3
+        )
 
 
 class EffectPosition:
@@ -123,7 +131,7 @@ class EffectPosition:
 
 
 # exits effects in potion bases.
-BaseEffects: dict[PotionBases, dict[Effects, EffectPosition]] = {
+base_effects: dict[PotionBases, dict[Effects, EffectPosition]] = {
     PotionBases.Water: {
         Effects.Healing: EffectPosition(5.3, -5.84, 0),
         Effects.Poison: EffectPosition(-5.65, -5.889, 0),
@@ -218,7 +226,7 @@ BaseEffects: dict[PotionBases, dict[Effects, EffectPosition]] = {
 
 
 if __name__ == "__main__":
-    print(Effects.AcidProtection.basePrice)
-    print(Effects.Rage.basePrice)
-    print(Effects.Curse.basePrice)
-    print(Effects.Healing.dullReachableTier(PotionBases.Oil))
+    print(Effects.AcidProtection.base_price)
+    print(Effects.Rage.base_price)
+    print(Effects.Curse.base_price)
+    print(Effects.Healing.dull_reachable_tier(PotionBases.Oil))

@@ -1,9 +1,9 @@
-﻿from enum import IntEnum
+from enum import IntEnum
 from collections import namedtuple
 
 NUMBER_OF_INGREDIENTS = 58
 NUMBER_OF_SALTS = 5
-_ingredientPrices = [
+_ingredient_prices = [
     38.8,
     83.2,
     88.8,
@@ -64,7 +64,7 @@ _ingredientPrices = [
     1438.4,
 ]
 
-_ingredientNames = [
+_ingredient_names = [
     "Windbloom",
     "Featherbloom",
     "Foggy Parasol",
@@ -192,11 +192,11 @@ class Ingredients(IntEnum):
 
     @property
     def price(self) -> float:
-        return _ingredientPrices[self]
+        return _ingredient_prices[self]
 
     @property
-    def name(self) -> str:
-        return _ingredientNames[self]
+    def ingredient_name(self) -> str:
+        return _ingredient_names[self]
 
 
 class Salts(IntEnum):
@@ -301,6 +301,5 @@ IngredientsProperties = namedtuple(
 if __name__ == "__main__":
     # print([1, 2, 3, 4][Ingredients.Windbloom + 2])
     # print(Ingredients.fromIndex(0))
-    print(Ingredients(2).name)
-    print(Ingredients["Windbloom"].name)
-    pass
+    print(Ingredients(2).ingredient_name)
+    print(Ingredients["Windbloom"].ingredient_name)

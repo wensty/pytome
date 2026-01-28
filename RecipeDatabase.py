@@ -17,9 +17,9 @@ def _recipe_hash(recipe: Recipe) -> str:
         [
             str(int(recipe.base)),
             str(int(recipe.hidden)),
-            ",".join(str(value) for value in recipe.effectTierList),
-            ",".join(str(value) for value in recipe.ingredientNumList),
-            ",".join(str(value) for value in recipe.saltGrainList),
+            ",".join(str(value) for value in recipe.effect_tier_list),
+            ",".join(str(value) for value in recipe.ingredient_num_list),
+            ",".join(str(value) for value in recipe.salt_grain_list),
         ]
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -122,21 +122,21 @@ def save_recipes(recipes: Iterable[Recipe], db_path: pathlib.Path = DEFAULT_DB_P
                 INSERT INTO recipe_effects (recipe_id, effect_id, tier)
                 VALUES (?, ?, ?)
                 """,
-                ((recipe_id, effect_id, int(tier)) for effect_id, tier in enumerate(recipe.effectTierList)),
+                ((recipe_id, effect_id, int(tier)) for effect_id, tier in enumerate(recipe.effect_tier_list)),
             )
             conn.executemany(
                 """
                 INSERT INTO recipe_ingredients (recipe_id, ingredient_id, amount)
                 VALUES (?, ?, ?)
                 """,
-                ((recipe_id, ingredient_id, float(amount)) for ingredient_id, amount in enumerate(recipe.ingredientNumList)),
+                ((recipe_id, ingredient_id, float(amount)) for ingredient_id, amount in enumerate(recipe.ingredient_num_list)),
             )
             conn.executemany(
                 """
                 INSERT INTO recipe_salts (recipe_id, salt_id, grains)
                 VALUES (?, ?, ?)
                 """,
-                ((recipe_id, salt_id, float(grains)) for salt_id, grains in enumerate(recipe.saltGrainList)),
+                ((recipe_id, salt_id, float(grains)) for salt_id, grains in enumerate(recipe.salt_grain_list)),
             )
             saved_count += 1
     return saved_count
@@ -184,9 +184,9 @@ def load_recipes(db_path: pathlib.Path = DEFAULT_DB_PATH) -> list[Recipe]:
 
 
 def build_database_from_tome(db_path: pathlib.Path = DEFAULT_DB_PATH) -> int:
-    from ReadTome import readTome
+    from ReadTome import read_tome
 
-    recipes = readTome()
+    recipes = read_tome()
     return save_recipes(recipes, db_path=db_path)
 
 
