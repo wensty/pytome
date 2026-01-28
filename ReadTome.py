@@ -1,32 +1,25 @@
-﻿import sys, pathlib
-import pickle, gzip
-
-from Recipes import Recipe, PotionBases, Potion
-from Effects import NUMBER_OF_EFFECTS
-from Recipes import Ingredients, Salts, NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
-
-from Recipes import EffectTierList, IngredientNumList, SaltGrainList
-
-
+﻿import gzip
+import pickle
 import re
+import pathlib
+from typing import Union
+from hashlib import md5
+
 import openpyxl
 from openpyxl_image_loader import SheetImageLoader
-from typing import Union
 
+from Effects import NUMBER_OF_EFFECTS
+from Recipes import Recipe, PotionBases
+from Recipes import Ingredients, Salts, NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
+from Recipes import Potion, IngredientNumList, SaltGrainList
+import Legendary
+import SingleEffect
 
 Numerical = Union[int, float]
 Correction = {"Stentch": "Stench", "Rejuvination": "Rejuvenation"}
 
-# TODO: Change set() to pandas tables.
-# TODO: Add optional properties like dry/wet or other challenges.
-
 
 def readTome():
-    import Legendary
-    import SingleEffect
-    import pickle
-    from hashlib import md5
-
     def toInt(x):
         if isinstance(x, Numerical):
             return int(x)
@@ -37,7 +30,7 @@ def readTome():
     tome = openpyxl.open("data/tome.xlsx", data_only=True)
     recipeDump: set[Recipe] = set()
 
-    ### Reading RecipeDump page
+    ## Reading RecipeDump page
     tomeRecipeDump = tome["Recipe Dump"]
     recipeDumpCount = 0
     row = 2  # First meaningful row.
@@ -46,7 +39,6 @@ def readTome():
         recipeTitle = tomeRecipeDump.cell(row, 1).value
         if recipeTitle is not None:
             recipeTitle = str(recipeTitle)
-            # print(recipeTitle)
             legendaryPattern = re.compile(r"^([a-zA-Z]*) ([a-zA-Z]*)-(\d*)('?)$")
             singleEffectPattern = re.compile(r"^([a-zA-z]*) ?((?:[a-zA-z]*)?)('?)$")
             legendaryMatch = re.match(legendaryPattern, recipeTitle)
@@ -63,18 +55,16 @@ def readTome():
                     groups = singleEffectMatch.groups()
                     key = "".join([groups[0], groups[1]])
                     key = Correction.get(key, key)
-                    level = tomeRecipeDump.cell(row, 2).value
-                    if isinstance(level, Numerical):
-                        level = int(level)
-                        if not (1 <= level <= 3):
-                            print(f"Unexpected level {level} for single effects found at row {row}.")
+                    tier = tomeRecipeDump.cell(row, 2).value
+                    if isinstance(tier, Numerical):
+                        tier = int(tier)
+                        if not (1 <= tier <= 3):
+                            print(f"Unexpected tier {tier} for single effects found at row {row}.")
                             continue
                     else:
-                        print(f"Level for single effect potion is not a number at row {row}.")
-                        print(recipeTitle)
-                        input()
+                        print(f"Tier for single effect potion is not a number at row {row}.")
                         continue
-                    key = ["Weak", "", "Strong"][level - 1] + key
+                    key = ["Weak", "", "Strong"][tier - 1] + key
                     potion: Potion = SingleEffect.__dict__[key]
                     hidden = bool(groups[2])
                 else:
@@ -98,11 +88,12 @@ def readTome():
             _saltGrains = SaltGrainList(toInt(tomeRecipeDump.cell(row, col).value) for col in range(78, 83))
             plotterLink = str(tomeRecipeDump.cell(row, 84).value)
             discordLink = tomeRecipeDump.cell(row, 17).hyperlink
-            discordLink = "" if discordLink is None else str(discordLink)
+            discordLink = str(discordLink) if discordLink else ""
+            hidden = hidden or not (bool(plotterLink) or bool(discordLink))
             # recipe = Recipe(potion, base, ingredientNums, saltGrains, plotterLink, discordLink)
             if hidden:
                 print(f"Info: row {row} is a hidden recipe.")
-            recipe = Recipe(base, potion, _ingredientNums, _saltGrains, discordLink=discordLink, plotterLink=plotterLink, hidden=hidden)
+            recipe = Recipe(base, potion, _ingredientNums, _saltGrains, discord_link=discordLink, plotter_link=plotterLink, hidden=hidden)
             if recipe in recipeDump:
                 print(f"row {row} records an identical recipe recorded before.")
             else:
@@ -130,7 +121,7 @@ def readTome():
     for row in range(10, 204):  # currently not collecting backups.
         if imageLoader.image_in(f"A{row}"):
             effectTiers = [0] * NUMBER_OF_EFFECTS
-            for col in range(4):
+            for col in range(5):
                 if imageLoader.image_in(f"{colLetters[col]}{row}"):
                     effectIcon = imageLoader.get(f"{colLetters[col]}{row}")
                     effectMD5 = md5(pickle.dumps(effectIcon)).hexdigest()
@@ -153,14 +144,16 @@ def readTome():
             _saltGrains[Salts.Life] += toInt(tomeSaltySkirt.cell(row, 15).value)
             saltGrainsList = SaltGrainList(_saltGrains)
             plotterLink = tomeSaltySkirt.cell(row, 7).hyperlink
-            # if plotterLink is not None:
-            #     plotterLink = plotterLink.target
-            plotterLink = "" if plotterLink is None else str(plotterLink)
-            # recipe = Recipe(potion, PotionBases.Unknown, ingredientNums, saltGrains, plotterLink, None)
-            recipe = Recipe(PotionBases.Unknown, potion, ingredientNumList, saltGrainsList, plotterLink=plotterLink)
+            plotterLink = plotterLink.target if plotterLink else ""
+            plotterLink = str(plotterLink) if plotterLink else ""
+            recipe = Recipe(PotionBases.Unknown, potion, ingredientNumList, saltGrainsList, plotter_link=plotterLink)
             if recipe not in recipeDump:
                 recipeDump.add(recipe)
                 saltySkirtCount += 1
+            # print(potion)
+            # print(ingredientNumList)
+            # print(saltGrainsList)
+            # input()
         else:
             continue
     print(f"Completed reading {saltySkirtCount} additional recipes from salty skirt page.")
@@ -168,10 +161,6 @@ def readTome():
 
 
 def readIconMD5():
-    from openpyxl_image_loader import SheetImageLoader
-    import openpyxl
-    import pickle
-    from hashlib import md5
 
     tomeSaltySkirt = openpyxl.open("data/tome.xlsx", data_only=True)["Salty Skirt"]
     imageLoader = SheetImageLoader(tomeSaltySkirt)
@@ -229,4 +218,3 @@ def readIconMD5():
 if __name__ == "__main__":
     # print(readIconMD5())
     readTome()
-    pass

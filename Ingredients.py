@@ -1,5 +1,4 @@
-﻿# Enumerations
-from enum import IntEnum
+﻿from enum import IntEnum
 from collections import namedtuple
 
 NUMBER_OF_INGREDIENTS = 58
