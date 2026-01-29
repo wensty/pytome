@@ -183,6 +183,13 @@ class FilterApp:
         self.root.title("Tome Recipe Filter")
         self.root.geometry("1000x720")
 
+        # For macOS x compatibility.
+        # TODO: add a custom theme for the app.
+
+        self.style = ttk.Style(root)
+        # self.style.theme_use("classic")
+        # self.style.configure("Tome.TFrame", background="#dbc4a0")
+
         self.db_path = tk.StringVar(value="data/tome.sqlite3")
 
         self.require_effects = tk.StringVar()
@@ -204,7 +211,7 @@ class FilterApp:
         self.require_base_tier_check = tk.BooleanVar(value=False)
         self.include_hidden = tk.BooleanVar(value=False)
 
-        self.page_size = tk.StringVar(value="15")
+        self.page_size = tk.StringVar(value="20")
         self.last_results: list[Recipe] = []
         self.render_icons = tk.BooleanVar(value=False)
         self._icon_cache: dict[str, ImageTk.PhotoImage] = {}
@@ -224,14 +231,13 @@ class FilterApp:
         self._build_ui()
 
     def _build_ui(self) -> None:
-        top = ttk.Frame(self.root, padding=10)
+        top = ttk.Frame(self.root, padding=10, style="Tome.TFrame")
         top.pack(fill=tk.X)
 
-        ttk.Label(top, text="DB Path").grid(row=0, column=0, sticky=tk.W)
         ttk.Entry(top, textvariable=self.db_path, width=60).grid(row=0, column=1, sticky=tk.W)
         ttk.Button(top, text="Browse", command=self._browse_db).grid(row=0, column=2, padx=5)
 
-        form = ttk.Frame(self.root, padding=10)
+        form = ttk.Frame(self.root, padding=10, style="Tome.TFrame")
         form.pack(fill=tk.X)
 
         self._add_row(form, 0, "Required effects (comma)", self.require_effects)
@@ -548,9 +554,9 @@ class FilterApp:
         )
 
         header_table = ttk.Frame(header_frame)
-        header_table.pack(fill=tk.X, anchor="nw")
+        header_table.pack(fill=tk.X, anchor="center")
         data_table = ttk.Frame(data_frame)
-        data_table.pack(fill=tk.X, anchor="nw")
+        data_table.pack(fill=tk.X, anchor="center")
 
         self._configure_table_columns(header_table)
         self._configure_table_columns(data_table)
@@ -609,9 +615,6 @@ class FilterApp:
         def _next_page() -> None:
             _rebuild_page(current_page.get() + 1)
 
-        def _apply_page_size() -> None:
-            _rebuild_page(1)
-
         def _go_to_page() -> None:
             try:
                 page = int(page_input_var.get())
@@ -644,12 +647,12 @@ class FilterApp:
 
     def _build_table_header(self, parent: ttk.Frame, row: int) -> None:
         base_cell = self._cell_frame(parent, row, 0, self.base_col_width, padding=0)
-        ttk.Label(base_cell, text="Index/Base").pack(anchor="w")
+        ttk.Label(base_cell, text="Index/Base")
 
         ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=1, sticky="ns", padx=2)
 
         effects_cell = self._cell_frame(parent, row, 2, self.effects_col_width)
-        ttk.Label(effects_cell, text="Effects (5)").pack(anchor="w")
+        ttk.Label(effects_cell, text="Effects (5)").place(relx=0.5, rely=0.5, anchor="center")
 
         ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=3, sticky="ns", padx=2)
 
@@ -693,34 +696,64 @@ class FilterApp:
         effects_cell = self._cell_frame(parent, row, 2, self.effects_col_width)
         effects = [(Effects(i).effect_name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0]
         effects = sorted(effects, key=lambda item: (-item[1], item[0]))[:5]
-        for idx, (name, value) in enumerate(effects):
-            icon = self._get_icon("effects", name, self.effect_icon_size)
-            if icon:
-                label = ttk.Label(effects_cell, image=icon)
-                label.grid(row=0, column=idx * 2)
-                self._icon_refs.append(icon)
-            ttk.Label(effects_cell, text=str(value)).grid(row=0, column=idx * 2 + 1, padx=2)
-        for idx in range(len(effects), 5):
-            ttk.Label(effects_cell, text=" ").grid(row=0, column=idx * 2, padx=2)
+        total_tiers = sum(tier for _name, tier in effects)
+        if total_tiers:
+            if recipe.is_exact:
+                icon_px = self.effect_icon_size
+            else:
+                scale = min(1.0, 5 / total_tiers)
+                icon_px = max(12, int(self.effect_icon_size * max(scale, 0.5)))
+
+            icons_per_row = max(1, self.effects_col_width // (icon_px + 4))
+            rows = (total_tiers + icons_per_row - 1) // icons_per_row
+            max_icon_px = max(12, (self.row_height - 4) // max(1, rows) - 2)
+            if icon_px > max_icon_px:
+                icon_px = max_icon_px
+                icons_per_row = max(1, self.effects_col_width // (icon_px + 4))
+
+            icon_names: list[str] = []
+            for name, tier in effects:
+                icon_names.extend([name] * tier)
+            for idx, name in enumerate(icon_names):
+                row_idx = idx // icons_per_row
+                col_idx = idx % icons_per_row
+                icon = self._get_icon("effects", name, icon_px)
+                if icon:
+                    label = ttk.Label(effects_cell, image=icon)
+                    label.grid(row=row_idx, column=col_idx, padx=1, pady=1)
+                    self._icon_refs.append(icon)
+                    effects_cell.columnconfigure(col_idx, minsize=icon_px + 2)
 
         ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=3, sticky="ns", padx=2)
 
         ingredients_cell = self._cell_frame(parent, row, 4, self.ingredients_col_width, padding=0)
         self._add_grid_background(ingredients_cell, len(Ingredients), self.ingredient_cell_px, group_every=7)
+        ingredients_cell.rowconfigure(0, weight=1)
         for idx, value in enumerate(recipe.ingredient_num_list):
             text = "" if value == 0 else _format_count(value)
-            ttk.Label(ingredients_cell, text=text, width=2, anchor="center").grid(row=0, column=idx)
-            ingredients_cell.columnconfigure(idx, minsize=self.ingredient_cell_px)
+            ttk.Label(
+                ingredients_cell,
+                text=text,
+                anchor="center",
+                font=("Arial", 18),
+            ).grid(row=0, column=idx)
+            ingredients_cell.columnconfigure(idx, minsize=self.ingredient_cell_px, weight=1)
         self._place_group_separators(ingredients_cell, self.ingredient_cell_px, len(Ingredients))
 
         ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=5, sticky="ns", padx=2)
 
         salts_cell = self._cell_frame(parent, row, 6, self.salts_col_width, padding=0)
         self._add_grid_background(salts_cell, len(Salts), self.salt_cell_px, group_every=0)
+        salts_cell.rowconfigure(0, weight=1)
         for idx, value in enumerate(recipe.salt_grain_list):
             text = "" if value == 0 else _format_count(value)
-            ttk.Label(salts_cell, text=text, width=4, anchor="center").grid(row=0, column=idx)
-            salts_cell.columnconfigure(idx, minsize=self.salt_cell_px)
+            ttk.Label(
+                salts_cell,
+                text=text,
+                anchor="center",
+                font=("Arial", 18),
+            ).grid(row=0, column=idx)
+            salts_cell.columnconfigure(idx, minsize=self.salt_cell_px, weight=1)
 
         ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=7, sticky="ns", padx=2)
 

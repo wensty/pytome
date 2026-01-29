@@ -5,3 +5,4 @@ data/tome.sqlite3
 .vscode
 data/pics
 data/icons
+_*.py

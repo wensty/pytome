@@ -1,5 +1,4 @@
 from enum import IntEnum
-from collections import namedtuple
 
 NUMBER_OF_INGREDIENTS = 58
 NUMBER_OF_SALTS = 5
