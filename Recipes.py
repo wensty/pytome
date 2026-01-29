@@ -115,10 +115,10 @@ class Recipe:
     def is_weak(self, required_effects: list[Effects], exact: bool = False) -> bool:
         assert len(required_effects) > 0
         if exact:
-            if not self.is_exact:
+            if not self.is_exact_recipe:
                 return False
             return (
-                self.is_exact
+                self.is_exact_recipe
                 and all(self.effect_tier_list[effect] <= 1 for effect in required_effects)
                 and any(self.effect_tier_list[effect] == 1 for effect in required_effects)
             )
@@ -128,9 +128,9 @@ class Recipe:
     def is_strong(self, required_effects: list[Effects], exact: bool = False) -> bool:
         assert len(required_effects) > 0
         if exact:
-            if not self.is_exact:
+            if not self.is_exact_recipe:
                 return False
-            return self.is_exact and any(self.effect_tier_list[effect] >= 3 for effect in required_effects)
+            return self.is_exact_recipe and any(self.effect_tier_list[effect] >= 3 for effect in required_effects)
         return any(self.effect_tier_list[effect] == 3 for effect in required_effects)
 
     def contains_ingredient(self, required_ingredient: Ingredients) -> bool:
@@ -149,10 +149,10 @@ class Recipe:
         return self.base != PotionBases.Unknown and self.base != required_base
 
     # A customer will accept the potion without additional requests, if any required effect is satisfied with at least 1 equivalent tier.
-    def is_accepted(self, required_effects: list[Effects], exact: bool = False) -> bool:
-        if not exact:
-            return max(self.effect_tier_list[effect] for effect in required_effects) > 0
-        assert self.is_exact
+    def is_accepted(self, required_effects: list[Effects], exact_recipe: bool = False) -> bool:
+        if not exact_recipe:
+            return any(self.effect_tier_list[effect] > 0 for effect in required_effects)
+        assert self.is_exact_recipe
         _max_required_tier = 0
         for effect in required_effects:
             _this_equivalent_tier = self.effect_tier_list[effect]
@@ -167,7 +167,7 @@ class Recipe:
     def extra_effects(self, required_effects: list[Effects], exact: bool = False) -> int:
         assert len(required_effects) > 0
         _max_extra_effects = 0
-        if exact and not self.is_exact:
+        if exact and not self.is_exact_recipe:
             return -1
 
         for effect in required_effects:
@@ -192,7 +192,7 @@ class Recipe:
 
     # If the recipe contains exact effect levels to acquire.
     @property
-    def is_exact(self) -> bool:
+    def is_exact_recipe(self) -> bool:
         return (sum(self.effect_tier_list) <= 5) and all(0 <= tier <= 3 for tier in self.effect_tier_list)
 
     # TODO: price calculation

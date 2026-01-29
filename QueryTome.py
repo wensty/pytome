@@ -91,8 +91,8 @@ def run_filters(
     required_effect_tiers: dict[Effects, int],
     ingredients_required: list[Ingredients],
     ingredients_forbidden: list[Ingredients],
+    exact_mode: bool,
     include_hidden: bool,
-    requirements_exact: bool,
     require_weak: bool,
     require_strong: bool,
     half_ingredient: Ingredients | None,
@@ -101,7 +101,6 @@ def run_filters(
     lowlander: int | None,
     require_dull: bool,
     require_valid: bool,
-    require_exact: bool,
     extra_effects: list[Effects],
     extra_effects_min: int | None,
     show: int,
@@ -119,15 +118,15 @@ def run_filters(
             continue
         if require_valid and not recipe.is_valid:
             continue
-        if require_exact and not recipe.is_exact:
+        if exact_mode and not recipe.is_exact_recipe:
             continue
         if lowlander is not None and not recipe.is_lowlander(lowlander):
             continue
-        if require_weak and required_effects and not recipe.is_weak(required_effects, exact=requirements_exact):
+        if require_weak and required_effects and not recipe.is_weak(required_effects, exact=exact_mode):
             continue
-        if require_strong and required_effects and not recipe.is_strong(required_effects, exact=requirements_exact):
+        if require_strong and required_effects and not recipe.is_strong(required_effects, exact=exact_mode):
             continue
-        if required_effects and not recipe.is_accepted(required_effects, exact=requirements_exact):
+        if required_effects and not recipe.is_accepted(required_effects, exact_recipe=exact_mode):
             continue
         if required_effect_tiers and not all(recipe.effect_tier_list[effect] >= tier for effect, tier in required_effect_tiers.items()):
             continue
@@ -138,7 +137,7 @@ def run_filters(
         if half_ingredient is not None and not recipe.contains_half_ingredient(half_ingredient):
             continue
         if extra_effects_min is not None and extra_effects:
-            if recipe.extra_effects(extra_effects, exact=requirements_exact) < extra_effects_min:
+            if recipe.extra_effects(extra_effects, exact=exact_mode) < extra_effects_min:
                 continue
         filtered.append(recipe)
 
@@ -149,7 +148,7 @@ def run_filters(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Quick SQL debugger for Tome database.")
+    parser = argparse.ArgumentParser(description="Quick recipe browser for Tome recipes database.")
     parser.add_argument("--db", default="data/tome.sqlite3", help="Path to sqlite database file.")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -173,9 +172,11 @@ def main() -> None:
     )
     filter_parser.add_argument("--ingredient", help="Comma-separated ingredients that must be present (>0).")
     filter_parser.add_argument(
+        "--exact",
         "--requirements-exact",
+        dest="exact_mode",
         action="store_true",
-        help="Evaluate effect-related requirements using Exact recipes only.",
+        help="Exact mode: only consider exact recipes and exact requirements.",
     )
     filter_parser.add_argument("--weak", action="store_true", help="Require Recipe.is_weak() on customer effects.")
     filter_parser.add_argument("--strong", action="store_true", help="Require Recipe.is_strong() on customer effects.")
@@ -186,7 +187,6 @@ def main() -> None:
     filter_parser.add_argument("--lowlander", type=int, help="Max number of ingredients used.")
     filter_parser.add_argument("--dull", action="store_true", help="Require Recipe.is_dull().")
     filter_parser.add_argument("--valid", action="store_true", help="Require Recipe.is_valid.")
-    filter_parser.add_argument("--exact", action="store_true", help="Require Recipe.is_exact.")
     filter_parser.add_argument("--include-hidden", action="store_true", help="Include hidden recipes.")
     filter_parser.add_argument(
         "--check-base-dull-tier",
@@ -261,8 +261,8 @@ def main() -> None:
         required_effect_tiers=required_effect_tiers,
         ingredients_required=ingredients_required,
         ingredients_forbidden=ingredients_forbidden,
+        exact_mode=args.exact_mode,
         include_hidden=args.include_hidden,
-        requirements_exact=args.requirements_exact,
         require_weak=args.weak,
         require_strong=args.strong,
         half_ingredient=half_ingredient,
@@ -271,7 +271,6 @@ def main() -> None:
         lowlander=args.lowlander,
         require_dull=args.dull,
         require_valid=args.valid,
-        require_exact=args.exact,
         extra_effects=extra_effects,
         extra_effects_min=args.extra_effects_min,
         show=args.show,

@@ -126,7 +126,7 @@ def filter_recipes(
     ingredients_required: list[Ingredients],
     ingredients_forbidden: list[Ingredients],
     include_hidden: bool,
-    requirements_exact: bool,
+    exact_mode: bool,
     require_weak: bool,
     require_strong: bool,
     half_ingredient: Ingredients | None,
@@ -135,7 +135,6 @@ def filter_recipes(
     lowlander: int | None,
     require_dull: bool,
     require_valid: bool,
-    require_exact: bool,
     extra_effects: list[Effects],
     extra_effects_min: int | None,
 ) -> list:
@@ -152,15 +151,15 @@ def filter_recipes(
             continue
         if require_valid and not recipe.is_valid:
             continue
-        if require_exact and not recipe.is_exact:
+        if exact_mode and not recipe.is_exact_recipe:
             continue
         if lowlander is not None and not recipe.is_lowlander(lowlander):
             continue
-        if require_weak and required_effects and not recipe.is_weak(required_effects, exact=requirements_exact):
+        if require_weak and required_effects and not recipe.is_weak(required_effects, exact=exact_mode):
             continue
-        if require_strong and required_effects and not recipe.is_strong(required_effects, exact=requirements_exact):
+        if require_strong and required_effects and not recipe.is_strong(required_effects, exact=exact_mode):
             continue
-        if required_effects and not recipe.is_accepted(required_effects, exact=requirements_exact):
+        if required_effects and not recipe.is_accepted(required_effects, exact_recipe=exact_mode):
             continue
         if required_effect_tiers and not all(recipe.effect_tier_list[effect] >= tier for effect, tier in required_effect_tiers.items()):
             continue
@@ -171,7 +170,7 @@ def filter_recipes(
         if half_ingredient is not None and not recipe.contains_half_ingredient(half_ingredient):
             continue
         if extra_effects_min is not None and extra_effects:
-            if recipe.extra_effects(extra_effects, exact=requirements_exact) < extra_effects_min:
+            if recipe.extra_effects(extra_effects, exact=exact_mode) < extra_effects_min:
                 continue
         filtered.append(recipe)
     return filtered
@@ -202,12 +201,11 @@ class FilterApp:
         self.lowlander = tk.StringVar()
         self.extra_effects_min = tk.StringVar()
 
-        self.requirements_exact = tk.BooleanVar(value=False)
+        self.exact_mode = tk.BooleanVar(value=False)
         self.require_weak = tk.BooleanVar(value=False)
         self.require_strong = tk.BooleanVar(value=False)
         self.require_dull = tk.BooleanVar(value=False)
         self.require_valid = tk.BooleanVar(value=False)
-        self.require_exact = tk.BooleanVar(value=False)
         self.require_base_tier_check = tk.BooleanVar(value=False)
         self.include_hidden = tk.BooleanVar(value=False)
 
@@ -221,9 +219,10 @@ class FilterApp:
         self.salt_icon_size = 36
         self.base_col_width = 110
         self.effects_col_width = self.effect_icon_size * 5 + 80
+        # should be compatible with multi-line recipes.
         self.ingredient_cell_px = self.icon_size + 6
         self.ingredients_col_width = self.ingredient_cell_px * len(Ingredients)
-        self.salt_cell_px = self.salt_icon_size + 12
+        self.salt_cell_px = self.salt_icon_size + 36
         self.salts_col_width = self.salt_cell_px * len(Salts)
         self.links_col_width = 120
         self.row_height = max(self.effect_icon_size, self.salt_icon_size, self.icon_size) + 12
@@ -310,18 +309,17 @@ class FilterApp:
 
         checks = ttk.Frame(self.root, padding=10)
         checks.pack(fill=tk.X)
-        ttk.Checkbutton(checks, text="Requirements Exact", variable=self.requirements_exact).grid(row=0, column=0)
+        ttk.Checkbutton(checks, text="Exact Mode", variable=self.exact_mode).grid(row=0, column=0)
         ttk.Checkbutton(checks, text="Weak", variable=self.require_weak).grid(row=0, column=1)
         ttk.Checkbutton(checks, text="Strong", variable=self.require_strong).grid(row=0, column=2)
         ttk.Checkbutton(checks, text="Dull", variable=self.require_dull).grid(row=0, column=3)
         ttk.Checkbutton(checks, text="Valid", variable=self.require_valid).grid(row=0, column=4)
-        ttk.Checkbutton(checks, text="Recipe Exact", variable=self.require_exact).grid(row=0, column=5)
         ttk.Checkbutton(
             checks,
             text="Check Base+Dull Tier",
             variable=self.require_base_tier_check,
-        ).grid(row=0, column=6)
-        ttk.Checkbutton(checks, text="Include Hidden", variable=self.include_hidden).grid(row=0, column=7)
+        ).grid(row=0, column=5)
+        ttk.Checkbutton(checks, text="Include Hidden", variable=self.include_hidden).grid(row=0, column=6)
 
         actions = ttk.Frame(self.root, padding=10)
         actions.pack(fill=tk.X)
@@ -432,7 +430,7 @@ class FilterApp:
                 ingredients_required=ingredients_required,
                 ingredients_forbidden=ingredients_forbidden,
                 include_hidden=self.include_hidden.get(),
-                requirements_exact=self.requirements_exact.get(),
+                exact_mode=self.exact_mode.get(),
                 require_weak=self.require_weak.get(),
                 require_strong=self.require_strong.get(),
                 half_ingredient=half_ingredient,
@@ -441,7 +439,6 @@ class FilterApp:
                 lowlander=lowlander_value,
                 require_dull=self.require_dull.get(),
                 require_valid=self.require_valid.get(),
-                require_exact=self.require_exact.get(),
                 extra_effects=extra_effects,
                 extra_effects_min=extra_effects_min_value,
             )
@@ -499,68 +496,109 @@ class FilterApp:
         window.title("Recipe Icon View")
         window.geometry("1600x1200")
 
-        header_canvas = tk.Canvas(window, height=self.row_height)
-        data_canvas = tk.Canvas(window)
-        v_scrollbar = ttk.Scrollbar(window, orient=tk.VERTICAL, command=data_canvas.yview)
+        left_header_canvas = tk.Canvas(window, height=self.row_height)
+        right_header_canvas = tk.Canvas(window, height=self.row_height)
+        left_data_canvas = tk.Canvas(window)
+        right_data_canvas = tk.Canvas(window)
+        v_scrollbar = ttk.Scrollbar(window, orient=tk.VERTICAL)
         h_scrollbar = ttk.Scrollbar(window, orient=tk.HORIZONTAL)
         corner_spacer = ttk.Frame(window)
         controls = ttk.Frame(window, padding=(8, 4))
 
-        header_frame = ttk.Frame(header_canvas)
-        data_frame = ttk.Frame(data_canvas)
+        left_header_frame = ttk.Frame(left_header_canvas)
+        right_header_frame = ttk.Frame(right_header_canvas)
+        left_data_frame = ttk.Frame(left_data_canvas)
+        right_data_frame = ttk.Frame(right_data_canvas)
 
         def _sync_scrollregions() -> None:
-            bbox = data_canvas.bbox("all")
-            if not bbox:
-                return
-            width = bbox[2] - bbox[0]
-            height = bbox[3] - bbox[1]
-            data_canvas.configure(scrollregion=(0, 0, width, height))
-            header_canvas.configure(scrollregion=(0, 0, width, self.row_height))
+            left_bbox = left_data_canvas.bbox("all")
+            right_bbox = right_data_canvas.bbox("all")
+            if left_bbox:
+                left_width = left_bbox[2] - left_bbox[0]
+                left_height = left_bbox[3] - left_bbox[1]
+                left_data_canvas.configure(scrollregion=(0, 0, left_width, left_height))
+                left_header_canvas.configure(scrollregion=(0, 0, left_width, self.row_height))
+            if right_bbox:
+                right_width = right_bbox[2] - right_bbox[0]
+                right_height = right_bbox[3] - right_bbox[1]
+                right_data_canvas.configure(scrollregion=(0, 0, right_width, right_height))
+                right_header_canvas.configure(scrollregion=(0, 0, right_width, self.row_height))
 
-        header_frame.bind("<Configure>", lambda event: _sync_scrollregions())
-        data_frame.bind("<Configure>", lambda event: _sync_scrollregions())
+        left_header_frame.bind("<Configure>", lambda event: _sync_scrollregions())
+        right_header_frame.bind("<Configure>", lambda event: _sync_scrollregions())
+        left_data_frame.bind("<Configure>", lambda event: _sync_scrollregions())
+        right_data_frame.bind("<Configure>", lambda event: _sync_scrollregions())
 
-        header_canvas.create_window((0, 0), window=header_frame, anchor="nw")
-        data_canvas.create_window((0, 0), window=data_frame, anchor="nw")
+        left_header_canvas.create_window((0, 0), window=left_header_frame, anchor="nw")
+        right_header_canvas.create_window((0, 0), window=right_header_frame, anchor="nw")
+        left_data_canvas.create_window((0, 0), window=left_data_frame, anchor="nw")
+        right_data_canvas.create_window((0, 0), window=right_data_frame, anchor="nw")
 
         def _xscroll(*args):
-            if not (header_canvas.winfo_exists() and data_canvas.winfo_exists()):
+            if not (right_header_canvas.winfo_exists() and right_data_canvas.winfo_exists()):
                 return
-            data_canvas.xview(*args)
-            header_canvas.xview(*args)
+            right_data_canvas.xview(*args)
+            right_header_canvas.xview(*args)
 
-        def _on_data_xscroll(first: float, last: float) -> None:
-            if not header_canvas.winfo_exists():
+        def _on_right_xscroll(first: float, last: float) -> None:
+            if not right_header_canvas.winfo_exists():
                 return
             h_scrollbar.set(first, last)
-            header_canvas.xview_moveto(first)
+            right_header_canvas.xview_moveto(first)
 
-        data_canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=_on_data_xscroll)
+        def _yscroll(*args):
+            if not (left_data_canvas.winfo_exists() and right_data_canvas.winfo_exists()):
+                return
+            left_data_canvas.yview(*args)
+            right_data_canvas.yview(*args)
+
+        def _on_right_yscroll(first: float, last: float) -> None:
+            if not left_data_canvas.winfo_exists():
+                return
+            v_scrollbar.set(first, last)
+            left_data_canvas.yview_moveto(first)
+
+        v_scrollbar.configure(command=_yscroll)
+        right_data_canvas.configure(yscrollcommand=_on_right_yscroll, xscrollcommand=_on_right_xscroll)
+        left_data_canvas.configure(yscrollcommand=v_scrollbar.set)
         h_scrollbar.configure(command=_xscroll)
 
-        window.grid_rowconfigure(1, weight=1)
-        window.grid_columnconfigure(0, weight=1)
+        left_width = self.effects_col_width + 4
+        left_header_canvas.configure(width=left_width)
+        left_data_canvas.configure(width=left_width)
 
-        header_canvas.grid(row=0, column=0, sticky="ew")
-        data_canvas.grid(row=1, column=0, sticky="nsew")
-        v_scrollbar.grid(row=1, column=1, sticky="ns")
-        h_scrollbar.grid(row=2, column=0, sticky="ew")
-        corner_spacer.grid(row=2, column=1, sticky="ns")
-        controls.grid(row=3, column=0, columnspan=2, sticky="ew")
-        data_canvas.bind(
+        window.grid_rowconfigure(1, weight=1)
+        window.grid_columnconfigure(0, weight=0, minsize=left_width)
+        window.grid_columnconfigure(1, weight=1)
+
+        left_header_canvas.grid(row=0, column=0, sticky="ew")
+        right_header_canvas.grid(row=0, column=1, sticky="ew")
+        left_data_canvas.grid(row=1, column=0, sticky="nsew")
+        right_data_canvas.grid(row=1, column=1, sticky="nsew")
+        v_scrollbar.grid(row=1, column=2, sticky="ns")
+        h_scrollbar.grid(row=2, column=0, columnspan=2, sticky="ew")
+        corner_spacer.grid(row=2, column=2, sticky="ns")
+        controls.grid(row=3, column=0, columnspan=3, sticky="ew")
+        right_data_canvas.bind(
             "<Shift-MouseWheel>",
             lambda event: _xscroll("scroll", -1 * (event.delta // 120), "units"),
         )
 
-        header_table = ttk.Frame(header_frame)
-        header_table.pack(fill=tk.X, anchor="center")
-        data_table = ttk.Frame(data_frame)
-        data_table.pack(fill=tk.X, anchor="center")
+        left_header_table = ttk.Frame(left_header_frame)
+        left_header_table.pack(fill=tk.X, anchor="nw")
+        right_header_table = ttk.Frame(right_header_frame)
+        right_header_table.pack(fill=tk.X, anchor="nw")
+        left_data_table = ttk.Frame(left_data_frame)
+        left_data_table.pack(fill=tk.X, anchor="nw")
+        right_data_table = ttk.Frame(right_data_frame)
+        right_data_table.pack(fill=tk.X, anchor="nw")
 
-        self._configure_table_columns(header_table)
-        self._configure_table_columns(data_table)
-        self._build_table_header(header_table, row=0)
+        self._configure_table_columns_left(left_header_table)
+        self._configure_table_columns_left(left_data_table)
+        self._configure_table_columns_right(right_header_table)
+        self._configure_table_columns_right(right_data_table)
+        self._build_table_header_left(left_header_table, row=0)
+        self._build_table_header_right(right_header_table, row=0)
         header_ref_count = len(self._icon_refs)
 
         current_page = tk.IntVar(value=1)
@@ -569,6 +607,8 @@ class FilterApp:
 
         page_label = ttk.Label(controls, text="Page 1 / 1")
         page_label.pack(side=tk.LEFT, padx=6)
+        range_label = ttk.Label(controls, text="Showing 0-0 of 0")
+        range_label.pack(side=tk.LEFT, padx=6)
 
         ttk.Label(controls, text="Go").pack(side=tk.LEFT)
         page_entry = ttk.Entry(controls, textvariable=page_input_var, width=6)
@@ -592,22 +632,33 @@ class FilterApp:
             total_pages.set(total)
             _update_page_label()
 
-            for child in data_table.winfo_children():
+            for child in left_data_table.winfo_children():
+                child.destroy()
+            for child in right_data_table.winfo_children():
                 child.destroy()
             del self._icon_refs[header_ref_count:]
 
             start = (page - 1) * size
             end = min(start + size, len(recipes))
+            if len(recipes) == 0:
+                range_label.configure(text="Showing 0-0 of 0")
+            else:
+                range_label.configure(text=f"Showing {start + 1}-{end} of {len(recipes)}")
             for row, (idx, recipe) in enumerate(zip(range(start, end), recipes[start:end])):
-                self._build_recipe_row(data_table, row=row, index=idx, recipe=recipe)
+                self._build_recipe_row_left(left_data_table, row=row, index=idx, recipe=recipe)
+                self._build_recipe_row_right(right_data_table, row=row, recipe=recipe)
                 if row == 0:
-                    ttk.Separator(data_table, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=9, sticky="NWE")
-                ttk.Separator(data_table, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=9, sticky="SWE")
+                    ttk.Separator(left_data_table, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=2, sticky="NWE")
+                    ttk.Separator(right_data_table, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=6, sticky="NWE")
+                ttk.Separator(left_data_table, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=2, sticky="SWE")
+                ttk.Separator(right_data_table, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=6, sticky="SWE")
 
             window.update_idletasks()
             _sync_scrollregions()
-            data_canvas.xview_moveto(0)
-            header_canvas.xview_moveto(0)
+            left_data_canvas.yview_moveto(0)
+            right_data_canvas.yview_moveto(0)
+            right_data_canvas.xview_moveto(0)
+            right_header_canvas.xview_moveto(0)
 
         def _prev_page() -> None:
             _rebuild_page(current_page.get() - 1)
@@ -638,6 +689,18 @@ class FilterApp:
         parent.grid_columnconfigure(6, minsize=self.salts_col_width)
         parent.grid_columnconfigure(7, minsize=4)
         parent.grid_columnconfigure(8, minsize=self.links_col_width)
+
+    def _configure_table_columns_left(self, parent: ttk.Frame) -> None:
+        parent.grid_columnconfigure(0, minsize=self.effects_col_width)
+        parent.grid_columnconfigure(1, minsize=4)
+
+    def _configure_table_columns_right(self, parent: ttk.Frame) -> None:
+        parent.grid_columnconfigure(0, minsize=4)
+        parent.grid_columnconfigure(1, minsize=self.ingredients_col_width)
+        parent.grid_columnconfigure(2, minsize=4)
+        parent.grid_columnconfigure(3, minsize=self.salts_col_width)
+        parent.grid_columnconfigure(4, minsize=4)
+        parent.grid_columnconfigure(5, minsize=self.links_col_width)
 
     def _cell_frame(self, parent: ttk.Frame, row: int, column: int, width: int, padding: int = 0) -> ttk.Frame:
         cell = ttk.Frame(parent, width=width, height=self.row_height, padding=padding)
@@ -684,8 +747,123 @@ class FilterApp:
         links_cell = self._cell_frame(parent, row, 8, self.links_col_width)
         ttk.Label(links_cell, text="Links").pack(anchor="w")
 
-    # def _build_horizontal_separator(self, parent: ttk.Frame, row: int) -> None:
-    #     ttk.Separator(parent, orient=tk.HORIZONTAL).grid(row=row, column=0, columnspan=9, sticky="ew")
+    def _build_table_header_left(self, parent: ttk.Frame, row: int) -> None:
+        effects_cell = self._cell_frame(parent, row, 0, self.effects_col_width)
+        ttk.Label(effects_cell, text="Effects (5)").place(relx=0.5, rely=0.5, anchor="center")
+        ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=1, sticky="ns", padx=2)
+
+    def _build_table_header_right(self, parent: ttk.Frame, row: int) -> None:
+        ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=0, sticky="ns", padx=2)
+        ingredients_cell = self._cell_frame(parent, row, 1, self.ingredients_col_width, padding=0)
+        self._add_grid_background(ingredients_cell, len(Ingredients), self.ingredient_cell_px, group_every=7)
+        ingredients_cell.rowconfigure(0, weight=1)
+        for idx, ingredient in enumerate(Ingredients):
+            icon = self._get_icon("ingredients", ingredient.ingredient_name, self.icon_size)
+            if icon:
+                label = ttk.Label(ingredients_cell, image=icon, anchor="center")
+                label.grid(row=0, column=idx)
+                self._icon_refs.append(icon)
+            ingredients_cell.columnconfigure(idx, minsize=self.ingredient_cell_px, weight=1)
+        self._place_group_separators(ingredients_cell, self.ingredient_cell_px, len(Ingredients))
+
+        ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=2, sticky="ns", padx=2)
+        salts_cell = self._cell_frame(parent, row, 3, self.salts_col_width, padding=0)
+        self._add_grid_background(salts_cell, len(Salts), self.salt_cell_px, group_every=0)
+        for idx, salt in enumerate(Salts):
+            icon = self._get_icon("salts", salt.salt_name, self.salt_icon_size)
+            if icon:
+                label = ttk.Label(salts_cell, image=icon, anchor="center")
+                label.grid(row=0, column=idx)
+                self._icon_refs.append(icon)
+            salts_cell.columnconfigure(idx, minsize=self.salt_cell_px)
+
+        ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=4, sticky="ns", padx=2)
+        links_cell = self._cell_frame(parent, row, 5, self.links_col_width)
+        ttk.Label(links_cell, text="Links").pack(anchor="w")
+
+    def _build_recipe_row_left(self, parent: ttk.Frame, row: int, index: int, recipe: Recipe) -> None:
+        base_name = PotionBases(recipe.base).name
+        effects_cell = self._cell_frame(parent, row, 0, self.effects_col_width)
+        effects = [(Effects(i).effect_name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0]
+        effects = sorted(effects, key=lambda item: (-item[1], item[0]))[:5]
+        total_tiers = sum(tier for _name, tier in effects)
+        if total_tiers or base_name:
+            if recipe.is_exact_recipe:
+                icon_px = self.effect_icon_size
+            else:
+                scale = min(1.0, 5 / max(1, total_tiers))
+                icon_px = max(12, int(self.effect_icon_size * max(scale, 0.5)))
+
+            icon_names: list[tuple[str, str]] = []
+            icon_names.append(("bases", base_name))
+            for name, tier in effects:
+                icon_names.extend([("effects", name)] * tier)
+
+            total_icons = len(icon_names)
+            icons_per_row = max(1, self.effects_col_width // (icon_px + 4))
+            rows = (total_icons + icons_per_row - 1) // icons_per_row
+            max_icon_px = max(12, (self.row_height - 4) // max(1, rows) - 2)
+            if icon_px > max_icon_px:
+                icon_px = max_icon_px
+                icons_per_row = max(1, self.effects_col_width // (icon_px + 4))
+
+            for idx, (folder, name) in enumerate(icon_names):
+                row_idx = idx // icons_per_row
+                col_idx = idx % icons_per_row
+                icon = self._get_icon(folder, name, icon_px)
+                if icon:
+                    label = ttk.Label(effects_cell, image=icon)
+                    label.grid(row=row_idx, column=col_idx, padx=1, pady=1)
+                    self._icon_refs.append(icon)
+                    effects_cell.columnconfigure(col_idx, minsize=icon_px + 2)
+        ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=1, sticky="ns", padx=2)
+
+    def _build_recipe_row_right(self, parent: ttk.Frame, row: int, recipe: Recipe) -> None:
+        ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=0, sticky="ns", padx=2)
+
+        ingredients_cell = self._cell_frame(parent, row, 1, self.ingredients_col_width, padding=0)
+        self._add_grid_background(ingredients_cell, len(Ingredients), self.ingredient_cell_px, group_every=7)
+        ingredients_cell.rowconfigure(0, weight=1)
+        for idx, value in enumerate(recipe.ingredient_num_list):
+            text = "" if value == 0 else _format_count(value)
+            ttk.Label(
+                ingredients_cell,
+                text=text,
+                anchor="center",
+                font=("Arial", 18),
+            ).grid(row=0, column=idx)
+            ingredients_cell.columnconfigure(idx, minsize=self.ingredient_cell_px, weight=1)
+        self._place_group_separators(ingredients_cell, self.ingredient_cell_px, len(Ingredients))
+
+        ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=2, sticky="ns", padx=2)
+
+        salts_cell = self._cell_frame(parent, row, 3, self.salts_col_width, padding=0)
+        self._add_grid_background(salts_cell, len(Salts), self.salt_cell_px, group_every=0)
+        salts_cell.rowconfigure(0, weight=1)
+        for idx, value in enumerate(recipe.salt_grain_list):
+            text = "" if value == 0 else _format_count(value)
+            ttk.Label(
+                salts_cell,
+                text=text,
+                anchor="center",
+                font=("Arial", 18),
+            ).grid(row=0, column=idx)
+            salts_cell.columnconfigure(idx, minsize=self.salt_cell_px, weight=1)
+
+        ttk.Separator(parent, orient=tk.VERTICAL).grid(row=row, column=4, sticky="ns", padx=2)
+
+        links_cell = self._cell_frame(parent, row, 5, self.links_col_width)
+
+        def _link_label(text: str, url: str | None) -> None:
+            if url:
+                label = ttk.Label(links_cell, text=text, foreground="#1a73e8", cursor="hand2")
+                label.bind("<Button-1>", lambda _event, target=url: webbrowser.open(target))
+            else:
+                label = ttk.Label(links_cell, text=text, foreground="#7a7a7a")
+            label.pack(side=tk.LEFT, padx=4)
+
+        _link_label("plotter", recipe.plotter_link)
+        _link_label("discord", recipe.discord_link)
 
     def _build_recipe_row(self, parent: ttk.Frame, row: int, index: int, recipe: Recipe) -> None:
         base_cell = self._cell_frame(parent, row, 0, self.base_col_width)
@@ -698,7 +876,7 @@ class FilterApp:
         effects = sorted(effects, key=lambda item: (-item[1], item[0]))[:5]
         total_tiers = sum(tier for _name, tier in effects)
         if total_tiers:
-            if recipe.is_exact:
+            if recipe.is_exact_recipe:
                 icon_px = self.effect_icon_size
             else:
                 scale = min(1.0, 5 / total_tiers)
