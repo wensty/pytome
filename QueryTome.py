@@ -73,11 +73,7 @@ def _format_nonzero(values: Iterable[tuple[str, float | int]]) -> str:
 
 def _print_recipe(recipe: Recipe, index: int) -> None:
     effects = _format_nonzero((Effects(i).name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0)
-    ingredients = _format_nonzero(
-        (Ingredients(i).ingredient_name, amount)
-        for i, amount in enumerate(recipe.ingredient_num_list)
-        if amount > 0
-    )
+    ingredients = _format_nonzero((Ingredients(i).ingredient_name, amount) for i, amount in enumerate(recipe.ingredient_num_list) if amount > 0)
     salts = _format_nonzero((Salts(i).name, grains) for i, grains in enumerate(recipe.salt_grain_list) if grains > 0)
     print(f"[{index}] base={PotionBases(recipe.base).name} hidden={bool(recipe.hidden)}")
     print(f"  effects: {effects}")
@@ -95,6 +91,7 @@ def run_filters(
     required_effect_tiers: dict[Effects, int],
     ingredients_required: list[Ingredients],
     ingredients_forbidden: list[Ingredients],
+    include_hidden: bool,
     requirements_exact: bool,
     require_weak: bool,
     require_strong: bool,
@@ -112,6 +109,8 @@ def run_filters(
     recipes = load_recipes(Path(db_path))
     filtered: list[Recipe] = []
     for recipe in recipes:
+        if not include_hidden and recipe.hidden:
+            continue
         if base is not None and recipe.base != base:
             continue
         if not_base is not None and recipe.base == not_base:
@@ -130,17 +129,11 @@ def run_filters(
             continue
         if required_effects and not recipe.is_accepted(required_effects, exact=requirements_exact):
             continue
-        if required_effect_tiers and not all(
-            recipe.effect_tier_list[effect] >= tier for effect, tier in required_effect_tiers.items()
-        ):
+        if required_effect_tiers and not all(recipe.effect_tier_list[effect] >= tier for effect, tier in required_effect_tiers.items()):
             continue
-        if ingredients_required and not all(
-            recipe.ingredient_num_list[ingredient] > 0 for ingredient in ingredients_required
-        ):
+        if ingredients_required and not all(recipe.ingredient_num_list[ingredient] > 0 for ingredient in ingredients_required):
             continue
-        if ingredients_forbidden and not all(
-            recipe.contains_no_ingredient(ingredient) for ingredient in ingredients_forbidden
-        ):
+        if ingredients_forbidden and not all(recipe.contains_no_ingredient(ingredient) for ingredient in ingredients_forbidden):
             continue
         if half_ingredient is not None and not recipe.contains_half_ingredient(half_ingredient):
             continue
@@ -194,6 +187,7 @@ def main() -> None:
     filter_parser.add_argument("--dull", action="store_true", help="Require Recipe.is_dull().")
     filter_parser.add_argument("--valid", action="store_true", help="Require Recipe.is_valid.")
     filter_parser.add_argument("--exact", action="store_true", help="Require Recipe.is_exact.")
+    filter_parser.add_argument("--include-hidden", action="store_true", help="Include hidden recipes.")
     filter_parser.add_argument(
         "--check-base-dull-tier",
         action="store_true",
@@ -256,13 +250,8 @@ def main() -> None:
         if base is not None:
             allowed_bases = [base]
         else:
-            allowed_bases = [
-                b for b in PotionBases if b != PotionBases.Unknown and b != not_base
-            ]
-        effect_ok = any(
-            any(effect.dull_reachable_tier(allowed_base) == 3 for allowed_base in allowed_bases)
-            for effect in required_effects
-        )
+            allowed_bases = [b for b in PotionBases if b != PotionBases.Unknown and b != not_base]
+        effect_ok = any(any(effect.dull_reachable_tier(allowed_base) == 3 for allowed_base in allowed_bases) for effect in required_effects)
         if not effect_ok:
             raise ValueError("No required effect can reach tier 3 without salts in allowed bases.")
 
@@ -272,6 +261,7 @@ def main() -> None:
         required_effect_tiers=required_effect_tiers,
         ingredients_required=ingredients_required,
         ingredients_forbidden=ingredients_forbidden,
+        include_hidden=args.include_hidden,
         requirements_exact=args.requirements_exact,
         require_weak=args.weak,
         require_strong=args.strong,

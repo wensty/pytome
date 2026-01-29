@@ -3,3 +3,5 @@ data/tome.xlsx
 data/iconMD5s.pkl.gz
 data/tome.sqlite3
 .vscode
+data/pics
+data/icons

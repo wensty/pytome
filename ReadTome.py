@@ -86,11 +86,11 @@ def read_tome():
             # to_int = lambda x: int(x) if x is not None else 0
             ingredient_num_list = IngredientNumList(to_int(tome_recipe_dump.cell(row, col).value) for col in range(20, 78))
             salt_grain_list = SaltGrainList(to_int(tome_recipe_dump.cell(row, col).value) for col in range(78, 83))
-            plotter_link = str(tome_recipe_dump.cell(row, 84).value)
+            plotter_link = tome_recipe_dump.cell(row, 84).value
+            plotter_link = str(plotter_link) if plotter_link else ""
             discord_link = tome_recipe_dump.cell(row, 17).hyperlink
             discord_link = discord_link.target or "" if discord_link else ""
             hidden = hidden or not (bool(plotter_link) or bool(discord_link))
-            # recipe = Recipe(potion, base, ingredient_num_list, salt_grain_list, plotter_link, discord_link)
             if hidden:
                 print(f"Info: row {row} is a hidden recipe.")
             recipe = Recipe(
@@ -107,7 +107,6 @@ def read_tome():
             else:
                 recipe_dump.add(recipe)
                 recipe_dump_count += 1
-
         else:
             # last recipe row.
             break
@@ -157,10 +156,6 @@ def read_tome():
             if recipe not in recipe_dump:
                 recipe_dump.add(recipe)
                 salty_skirt_count += 1
-            # print(potion)
-            # print(ingredient_num_list)
-            # print(salt_grain_list)
-            # input()
         else:
             continue
     print(f"Completed reading {salty_skirt_count} additional recipes from salty skirt page.")
@@ -168,53 +163,12 @@ def read_tome():
 
 
 def read_icon_md5():
+    from Common import EXAMPLE_EFFECT_ICON_ROWS
 
     tome_salty_skirt = openpyxl.open("data/tome.xlsx", data_only=True)["Salty Skirt"]
     image_loader = SheetImageLoader(tome_salty_skirt)
 
-    example_icon_rows = [
-        166,
-        140,
-        151,
-        158,
-        141,
-        169,
-        153,
-        156,
-        146,
-        147,
-        142,
-        143,
-        167,
-        159,
-        152,
-        177,
-        186,
-        144,
-        161,
-        187,
-        172,
-        148,
-        168,
-        162,
-        163,
-        176,
-        160,
-        185,
-        154,
-        170,
-        174,
-        171,
-        149,
-        157,
-        188,
-        164,
-        150,
-        190,
-        175,
-        189,
-        173,
-    ]
+    example_icon_rows = EXAMPLE_EFFECT_ICON_ROWS
     icon_md5 = {}
     for index, row in enumerate(example_icon_rows):
         image = image_loader.get(f"A{row}")

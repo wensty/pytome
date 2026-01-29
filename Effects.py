@@ -3,7 +3,7 @@ from typing import Union
 
 NUMBER_OF_EFFECTS = 41
 
-effect_base_prices = [
+_effect_base_prices = [
     100,
     130,
     200,
@@ -47,12 +47,69 @@ effect_base_prices = [
     2370,
 ]
 
+_base_names = [
+    "Water",
+    "Oil",
+    "Wine",
+    "Unknown",
+]
+
+_effect_names = [
+    "Healing",
+    "Poison",
+    "Frost",
+    "Fire",
+    "Strength",
+    "Wild Growth",
+    "Mana",
+    "Explosion",
+    "Dexterity",
+    "Swiftness",
+    "Stone Skin",
+    "Sleep",
+    "Poison Protection",
+    "Light",
+    "Lightning",
+    "Gluing",
+    "Stench",
+    "Slowness",
+    "Slipperiness",
+    "Fragrance",
+    "Acid",
+    "Charm",
+    "Acid Protection",
+    "Frost Protection",
+    "Fire Protection",
+    "Lightning Protection",
+    "Rage",
+    "Curse",
+    "Magical Vision",
+    "Rejuvenation",
+    "Fear",
+    "Libido",
+    "Invisibility",
+    "Enlargement",
+    "Hallucinations",
+    "Shrinking",
+    "Levitation",
+    "Inspiration",
+    "Anti Magic",
+    "Luck",
+    "Necromancy",
+]
+
 
 class PotionBases(IntEnum):
     Water = 0
     Oil = 1
     Wine = 2
     Unknown = 3
+
+    __doc__ = "Enumeration class for potion bases."
+
+    @property
+    def base_name(self) -> str:
+        return _base_names[self]
 
 
 class Effects(IntEnum):
@@ -102,7 +159,11 @@ class Effects(IntEnum):
 
     @property
     def base_price(self) -> int:
-        return effect_base_prices[self]
+        return _effect_base_prices[self]
+
+    @property
+    def effect_name(self) -> str:
+        return _effect_names[self]
 
     def exists_in_base(self, base: Union[int, PotionBases]) -> bool:
         if isinstance(base, int):
@@ -122,7 +183,7 @@ class EffectPosition:
         self.angle = angle
 
 
-# exits effects in potion bases.
+# exist effects and their positions in potion base maps.
 base_effects: dict[PotionBases, dict[Effects, EffectPosition]] = {
     PotionBases.Water: {
         Effects.Healing: EffectPosition(5.3, -5.84, 0),

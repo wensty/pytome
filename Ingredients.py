@@ -125,6 +125,14 @@ _ingredient_names = [
     "Fable Bismuth",
 ]
 
+_salt_names = [
+    "Void Salt",
+    "Moon Salt",
+    "Sun Salt",
+    "Life Salt",
+    "Philosopher's Salt",
+]
+
 # TODO: _ingredientGrowPosition
 
 
@@ -209,11 +217,10 @@ class Salts(IntEnum):
 
     __doc__ = "Enum for salt names."
 
+    @property
+    def salt_name(self) -> str:
+        return _salt_names[self]
 
-IngredientsProperties = namedtuple(
-    "IngredientsProperties",
-    ["name", "price", "location"],
-)
 
 """
     Grow positions:
