@@ -12,16 +12,29 @@ from PIL import Image, ImageTk
 from Effects import Effects, PotionBases
 from Ingredients import Ingredients, Salts
 from RecipeDatabase import add_recipe, delete_recipe_by_hash, get_recipe_hash, load_recipes, recipe_hash_exists, update_recipe_by_hash
+from Requirements import (
+    Accepted,
+    AddHalfIngredient,
+    AddOneIngredient,
+    DullRecipe,
+    ExcludeIngredient,
+    IsCertainBase,
+    IsNotCertainBase,
+    LowlanderRecipe,
+    StrongRecipe,
+    WeakRecipe,
+    count_extra_effects,
+)
 from Recipes import EffectTierList, IngredientNumList, Recipe, SaltGrainList
 
 
-def _parse_enum_list(raw: str, enum_cls: type) -> list:
+def _parse_enum_list(raw: str, enum_cls, name_attr: str | None = None) -> list:
     if not raw.strip():
         return []
-    lookup = {name.lower(): member for name, member in enum_cls.__members__.items()}
+    lookup = _build_enum_lookup(enum_cls, name_attr)
     values = []
     for item in raw.split(","):
-        key = item.strip().lower()
+        key = _normalize_name(item)
         if not key:
             continue
         if key not in lookup:
@@ -211,37 +224,44 @@ def filter_recipes(
 ) -> list:
     recipes = load_recipes(Path(db_path))
     filtered = []
+    accepted_req = Accepted(required_effects, exact_mode) if required_effects else None
+    weak_req = WeakRecipe(required_effects, exact_mode) if require_weak and required_effects else None
+    strong_req = StrongRecipe(required_effects, exact_mode) if require_strong and required_effects else None
+    dull_req = DullRecipe() if require_dull else None
+    base_req = IsCertainBase(base) if base is not None else None
+    not_base_req = IsNotCertainBase(not_base) if not_base is not None else None
+    lowlander_req = LowlanderRecipe(lowlander) if lowlander is not None else None
     for recipe in recipes:
         if not include_hidden and recipe.hidden:
             continue
-        if base is not None and not recipe.is_certain_base(base):
+        if base_req and not base_req.is_satisfied(recipe):
             continue
-        if not_base is not None and not recipe.is_not_certain_base(not_base):
+        if not_base_req and not not_base_req.is_satisfied(recipe):
             continue
-        if require_dull and not recipe.is_dull():
+        if dull_req and not dull_req.is_satisfied(recipe):
             continue
         if require_valid and not recipe.is_valid:
             continue
         if exact_mode and not recipe.is_exact_recipe:
             continue
-        if lowlander is not None and not recipe.is_lowlander(lowlander):
+        if lowlander_req and not lowlander_req.is_satisfied(recipe):
             continue
-        if require_weak and required_effects and not recipe.is_weak(required_effects, exact=exact_mode):
+        if weak_req and not weak_req.is_satisfied(recipe):
             continue
-        if require_strong and required_effects and not recipe.is_strong(required_effects, exact=exact_mode):
+        if strong_req and not strong_req.is_satisfied(recipe):
             continue
-        if required_effects and not recipe.is_accepted(required_effects, exact_recipe=exact_mode):
+        if accepted_req and not accepted_req.is_satisfied(recipe):
             continue
         if required_effect_tiers and not all(recipe.effect_tier_list[effect] >= tier for effect, tier in required_effect_tiers.items()):
             continue
-        if ingredients_required and not all(recipe.ingredient_num_list[ingredient] > 0 for ingredient in ingredients_required):
+        if ingredients_required and not AddOneIngredient(ingredients_required[0]).is_satisfied(recipe):
             continue
-        if ingredients_forbidden and not all(recipe.contains_no_ingredient(ingredient) for ingredient in ingredients_forbidden):
+        if ingredients_forbidden and not ExcludeIngredient(ingredients_forbidden[0]).is_satisfied(recipe):
             continue
-        if half_ingredient is not None and not recipe.contains_half_ingredient(half_ingredient):
+        if half_ingredient is not None and not AddHalfIngredient(half_ingredient).is_satisfied(recipe):
             continue
         if extra_effects_min is not None and extra_effects:
-            if recipe.extra_effects(extra_effects, exact=exact_mode) < extra_effects_min:
+            if count_extra_effects(recipe, extra_effects, exact=exact_mode) < extra_effects_min:
                 continue
         filtered.append(recipe)
     return filtered
@@ -356,13 +376,19 @@ class FilterApp:
         ttk.Button(
             selectors,
             text="Add to Ingredients",
-            command=lambda: _append_csv(self.ingredients, self.ingredient_select.get().strip()),
+            command=lambda: self._set_single_ingredient(self.ingredients, self.ingredient_select.get()),
         ).grid(row=2, column=2, padx=5, sticky=tk.W)
         ttk.Button(
             selectors,
             text="Exclude Ingredient",
-            command=lambda: _append_csv(self.no_ingredients, self.ingredient_select.get().strip()),
+            command=lambda: self._set_single_ingredient(self.no_ingredients, self.ingredient_select.get()),
         ).grid(row=2, column=3, padx=5, sticky=tk.W)
+        ttk.Button(
+            selectors,
+            text="Half Ingredient",
+            command=lambda: self._set_single_ingredient(self.half_ingredient, self.ingredient_select.get()),
+        ).grid(row=2, column=4, padx=5, sticky=tk.W)
+        self.half_ingredient.trace_add("write", self._sync_half_ingredient)
 
         ttk.Label(selectors, text="Base").grid(row=3, column=0, sticky=tk.W)
         ttk.Combobox(selectors, textvariable=self.base, values=base_names, width=24).grid(row=3, column=1, sticky=tk.W)
@@ -655,6 +681,27 @@ class FilterApp:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky=tk.W, pady=2)
         ttk.Entry(parent, textvariable=var, width=60).grid(row=row, column=1, sticky=tk.W, pady=2)
 
+    def _set_single_ingredient(self, target_var: tk.StringVar, ingredient_name: str) -> None:
+        name = ingredient_name.strip()
+        if not name:
+            return
+        lookup = _build_enum_lookup(Ingredients, "ingredient_name")
+        ingredient = lookup.get(_normalize_name(name))
+        if ingredient is None:
+            return
+        display_name = ingredient.ingredient_name
+        target_var.set(display_name)
+        other_vars = [self.ingredients, self.no_ingredients, self.half_ingredient]
+        for other in other_vars:
+            if other is target_var:
+                continue
+            try:
+                values = _parse_enum_list(other.get(), Ingredients, "ingredient_name")
+            except ValueError:
+                continue
+            if ingredient in values:
+                other.set("")
+
     def _browse_db(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("SQLite DB", "*.sqlite3"), ("All files", "*.*")])
         if path:
@@ -667,6 +714,19 @@ class FilterApp:
             return
         entry = f"{effect_name}:{tier}"
         _append_csv(self.require_tiers, entry)
+
+    def _sync_half_ingredient(self, *_args) -> None:
+        raw = self.half_ingredient.get().strip()
+        if not raw:
+            return
+        try:
+            values = _parse_enum_list(raw, Ingredients, "ingredient_name")
+        except ValueError:
+            return
+        if not values:
+            return
+        ingredient = values[0]
+        self._set_single_ingredient(self.half_ingredient, ingredient.ingredient_name)
 
     def _set_tiers_from_potion(self, potion_defs: dict[str, EffectTierList]) -> None:
         key = self.potion_select.get().strip()
@@ -682,12 +742,12 @@ class FilterApp:
 
     def _run_filter(self) -> None:
         try:
-            required_effects = _parse_enum_list(self.require_effects.get(), Effects)
+            required_effects = _parse_enum_list(self.require_effects.get(), Effects, "effect_name")
             required_effect_tiers = _parse_effect_tiers(self.require_tiers.get())
             _validate_exact_requirements(required_effect_tiers)
-            ingredients_required = _parse_enum_list(self.ingredients.get(), Ingredients)
-            ingredients_forbidden = _parse_enum_list(self.no_ingredients.get(), Ingredients)
-            half_ingredient_list = _parse_enum_list(self.half_ingredient.get(), Ingredients)
+            ingredients_required = _parse_enum_list(self.ingredients.get(), Ingredients, "ingredient_name")
+            ingredients_forbidden = _parse_enum_list(self.no_ingredients.get(), Ingredients, "ingredient_name")
+            half_ingredient_list = _parse_enum_list(self.half_ingredient.get(), Ingredients, "ingredient_name")
             half_ingredient = half_ingredient_list[0] if half_ingredient_list else None
             base_list = _parse_enum_list(self.base.get(), PotionBases)
             base = base_list[0] if base_list else None
@@ -706,6 +766,16 @@ class FilterApp:
                 raise ValueError("Weak and Strong are mutually exclusive.")
             if lowlander_value == 1 and (ingredients_required or half_ingredient):
                 raise ValueError("Lowlander=1 is mutually exclusive with ingredient/half-ingredient.")
+            if len(ingredients_required) > 1:
+                raise ValueError("Ingredient requirement supports only one ingredient.")
+            if len(ingredients_forbidden) > 1:
+                raise ValueError("Exclude ingredient supports only one ingredient.")
+            if ingredients_required and ingredients_forbidden and ingredients_required[0] == ingredients_forbidden[0]:
+                raise ValueError("Ingredient and exclude ingredient must be different.")
+            if ingredients_required and half_ingredient and ingredients_required[0] == half_ingredient:
+                raise ValueError("Ingredient and half ingredient must be different.")
+            if ingredients_forbidden and half_ingredient and ingredients_forbidden[0] == half_ingredient:
+                raise ValueError("Exclude ingredient and half ingredient must be different.")
 
             requirement_groups = [
                 bool(required_effects or required_effect_tiers),

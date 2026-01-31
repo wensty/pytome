@@ -7,6 +7,19 @@ from Effects import Effects, PotionBases
 from Ingredients import Ingredients, Salts
 from RecipeDatabase import load_recipes
 from Recipes import Recipe
+from Requirements import (
+    Accepted,
+    AddHalfIngredient,
+    AddOneIngredient,
+    DullRecipe,
+    ExcludeIngredient,
+    IsCertainBase,
+    IsNotCertainBase,
+    LowlanderRecipe,
+    StrongRecipe,
+    WeakRecipe,
+    count_extra_effects,
+)
 
 
 def run_query(db_path: str, query: str) -> None:
@@ -107,37 +120,44 @@ def run_filters(
 ) -> None:
     recipes = load_recipes(Path(db_path))
     filtered: list[Recipe] = []
+    accepted_req = Accepted(required_effects, exact_mode) if required_effects else None
+    weak_req = WeakRecipe(required_effects, exact_mode) if require_weak and required_effects else None
+    strong_req = StrongRecipe(required_effects, exact_mode) if require_strong and required_effects else None
+    dull_req = DullRecipe() if require_dull else None
+    base_req = IsCertainBase(base) if base is not None else None
+    not_base_req = IsNotCertainBase(not_base) if not_base is not None else None
+    lowlander_req = LowlanderRecipe(lowlander) if lowlander is not None else None
     for recipe in recipes:
         if not include_hidden and recipe.hidden:
             continue
-        if base is not None and recipe.base != base:
+        if base_req and not base_req.is_satisfied(recipe):
             continue
-        if not_base is not None and recipe.base == not_base:
+        if not_base_req and not not_base_req.is_satisfied(recipe):
             continue
-        if require_dull and not recipe.is_dull():
+        if dull_req and not dull_req.is_satisfied(recipe):
             continue
         if require_valid and not recipe.is_valid:
             continue
         if exact_mode and not recipe.is_exact_recipe:
             continue
-        if lowlander is not None and not recipe.is_lowlander(lowlander):
+        if lowlander_req and not lowlander_req.is_satisfied(recipe):
             continue
-        if require_weak and required_effects and not recipe.is_weak(required_effects, exact=exact_mode):
+        if weak_req and not weak_req.is_satisfied(recipe):
             continue
-        if require_strong and required_effects and not recipe.is_strong(required_effects, exact=exact_mode):
+        if strong_req and not strong_req.is_satisfied(recipe):
             continue
-        if required_effects and not recipe.is_accepted(required_effects, exact_recipe=exact_mode):
+        if accepted_req and not accepted_req.is_satisfied(recipe):
             continue
         if required_effect_tiers and not all(recipe.effect_tier_list[effect] >= tier for effect, tier in required_effect_tiers.items()):
             continue
-        if ingredients_required and not all(recipe.ingredient_num_list[ingredient] > 0 for ingredient in ingredients_required):
+        if ingredients_required and not AddOneIngredient(ingredients_required[0]).is_satisfied(recipe):
             continue
-        if ingredients_forbidden and not all(recipe.contains_no_ingredient(ingredient) for ingredient in ingredients_forbidden):
+        if ingredients_forbidden and not ExcludeIngredient(ingredients_forbidden[0]).is_satisfied(recipe):
             continue
-        if half_ingredient is not None and not recipe.contains_half_ingredient(half_ingredient):
+        if half_ingredient is not None and not AddHalfIngredient(half_ingredient).is_satisfied(recipe):
             continue
         if extra_effects_min is not None and extra_effects:
-            if recipe.extra_effects(extra_effects, exact=exact_mode) < extra_effects_min:
+            if count_extra_effects(recipe, extra_effects, exact=exact_mode) < extra_effects_min:
                 continue
         filtered.append(recipe)
 
@@ -178,14 +198,14 @@ def main() -> None:
         action="store_true",
         help="Exact mode: only consider exact recipes and exact requirements.",
     )
-    filter_parser.add_argument("--weak", action="store_true", help="Require Recipe.is_weak() on customer effects.")
-    filter_parser.add_argument("--strong", action="store_true", help="Require Recipe.is_strong() on customer effects.")
-    filter_parser.add_argument("--half-ingredient", help="Ingredient for Recipe.contains_half_ingredient().")
+    filter_parser.add_argument("--weak", action="store_true", help="Require weak customer effects.")
+    filter_parser.add_argument("--strong", action="store_true", help="Require strong customer effects.")
+    filter_parser.add_argument("--half-ingredient", help="Ingredient that must be at least half.")
     filter_parser.add_argument("--base", help="Base name: Water/Oil/Wine/Unknown.")
     filter_parser.add_argument("--not-base", help="Exclude a base name: Water/Oil/Wine/Unknown.")
     filter_parser.add_argument("--no-ingredient", help="Comma-separated ingredients to exclude.")
     filter_parser.add_argument("--lowlander", type=int, help="Max number of ingredients used.")
-    filter_parser.add_argument("--dull", action="store_true", help="Require Recipe.is_dull().")
+    filter_parser.add_argument("--dull", action="store_true", help="Require dull recipe (no salts).")
     filter_parser.add_argument("--valid", action="store_true", help="Require Recipe.is_valid.")
     filter_parser.add_argument("--include-hidden", action="store_true", help="Include hidden recipes.")
     filter_parser.add_argument(
@@ -196,7 +216,7 @@ def main() -> None:
     filter_parser.add_argument(
         "--extra-effects-min",
         type=int,
-        help="Minimum compatible extra effects for Recipe.extra_effects().",
+        help="Minimum compatible extra effects.",
     )
     filter_parser.add_argument("--show", type=int, default=5, help="Show first N recipes (0 to skip).")
 
@@ -211,9 +231,19 @@ def main() -> None:
     _validate_exact_requirements(required_effect_tiers)
     ingredients_required = _parse_enum_list(args.ingredient, Ingredients)
     ingredients_forbidden = _parse_enum_list(args.no_ingredient, Ingredients)
+    if len(ingredients_required) > 1:
+        raise ValueError("Ingredient requirement supports only one ingredient.")
+    if len(ingredients_forbidden) > 1:
+        raise ValueError("Exclude ingredient supports only one ingredient.")
     extra_effects = required_effects
     half_ingredient_list = _parse_enum_list(args.half_ingredient, Ingredients)
     half_ingredient = half_ingredient_list[0] if half_ingredient_list else None
+    if ingredients_required and ingredients_forbidden and ingredients_required[0] == ingredients_forbidden[0]:
+        raise ValueError("Ingredient and exclude ingredient must be different.")
+    if ingredients_required and half_ingredient and ingredients_required[0] == half_ingredient:
+        raise ValueError("Ingredient and half ingredient must be different.")
+    if ingredients_forbidden and half_ingredient and ingredients_forbidden[0] == half_ingredient:
+        raise ValueError("Exclude ingredient and half ingredient must be different.")
     base_list = _parse_enum_list(args.base, PotionBases)
     base = base_list[0] if base_list else None
     not_base_list = _parse_enum_list(args.not_base, PotionBases)

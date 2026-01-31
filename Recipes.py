@@ -105,86 +105,6 @@ class Recipe:
     def __repr__(self) -> str:
         return f"Recipe({self.base}, {self.effect_tier_list}, {self.ingredient_num_list}, {self.salt_grain_list})"
 
-    def is_dull(self) -> bool:
-        return all(salt == 0 for salt in self.salt_grain_list)
-
-    def is_lowlander(self, k: int) -> bool:
-        return sum(1 if ingredient > 0 else 0 for ingredient in self.ingredient_num_list) <= k
-
-    # A customer considers a potion weak, if all required effects exist in the potion is at most tier 1 and is accepted.
-    def is_weak(self, required_effects: list[Effects], exact: bool = False) -> bool:
-        assert len(required_effects) > 0
-        if exact:
-            if not self.is_exact_recipe:
-                return False
-            return (
-                self.is_exact_recipe
-                and all(self.effect_tier_list[effect] <= 1 for effect in required_effects)
-                and any(self.effect_tier_list[effect] == 1 for effect in required_effects)
-            )
-        return any(self.effect_tier_list[effect] >= 1 for effect in required_effects)
-
-    # A customer considers a potion strong, if any required effect exists in the potion is at least tier 3 and is accepted.
-    def is_strong(self, required_effects: list[Effects], exact: bool = False) -> bool:
-        assert len(required_effects) > 0
-        if exact:
-            if not self.is_exact_recipe:
-                return False
-            return self.is_exact_recipe and any(self.effect_tier_list[effect] >= 3 for effect in required_effects)
-        return any(self.effect_tier_list[effect] == 3 for effect in required_effects)
-
-    def contains_ingredient(self, required_ingredient: Ingredients) -> bool:
-        return self.ingredient_num_list[required_ingredient] > 0
-
-    def contains_half_ingredient(self, required_ingredient: Ingredients) -> bool:
-        return self.ingredient_num_list[required_ingredient] >= 0.5 * sum(self.ingredient_num_list)
-
-    def contains_no_ingredient(self, required_ingredient: Ingredients) -> bool:
-        return self.ingredient_num_list[required_ingredient] == 0
-
-    def is_certain_base(self, required_base: PotionBases) -> bool:
-        return self.base != PotionBases.Unknown and self.base == required_base
-
-    def is_not_certain_base(self, required_base: PotionBases) -> bool:
-        return self.base != PotionBases.Unknown and self.base != required_base
-
-    # A customer will accept the potion without additional requests, if any required effect is satisfied with at least 1 equivalent tier.
-    def is_accepted(self, required_effects: list[Effects], exact_recipe: bool = False) -> bool:
-        if not exact_recipe:
-            return any(self.effect_tier_list[effect] > 0 for effect in required_effects)
-        assert self.is_exact_recipe
-        _max_required_tier = 0
-        for effect in required_effects:
-            _this_equivalent_tier = self.effect_tier_list[effect]
-            for extra_effect in Effects:
-                if extra_effect != effect and self.effect_tier_list[extra_effect] > 0 and Compatibility[effect.value][extra_effect.value] == 0:
-                    _this_equivalent_tier -= self.effect_tier_list[extra_effect]
-            _max_required_tier = max(_max_required_tier, _this_equivalent_tier)
-        return _max_required_tier > 0
-
-    # A customer will consider extra effect requirement satisfied, if any required effect is satisfied with at least 1 equivalent tier and
-    # has at least 1 extra effect.
-    def extra_effects(self, required_effects: list[Effects], exact: bool = False) -> int:
-        assert len(required_effects) > 0
-        _max_extra_effects = 0
-        if exact and not self.is_exact_recipe:
-            return -1
-
-        for effect in required_effects:
-            _this_extra_effects = 0
-            _this_equivalent_tier = self.effect_tier_list[effect.value]
-            for extra_effect in Effects:
-                if extra_effect != effect and self.effect_tier_list[extra_effect] > 0:
-                    # check Compatibility:
-                    if Compatibility[effect.value][extra_effect.value] == 1:
-                        _this_extra_effects += 1
-                    elif exact:
-                        # cancel out _this_equivalent_tier if the recipe is exact:
-                        _this_equivalent_tier -= self.effect_tier_list[extra_effect]
-            if _this_equivalent_tier > 0:
-                _max_extra_effects = max(_max_extra_effects, _this_extra_effects)
-        return min(_max_extra_effects, 4)
-
     # If the recipe contains effects with legal levels.
     @property
     def is_valid(self) -> bool:
@@ -263,7 +183,7 @@ def test():
     )
     salt_grain_list = SaltGrainList.from_name(Sun=100)
     recipe = Recipe(PotionBases.Water, effect_tier_list, ingredient_num_list, salt_grain_list)
-    print(recipe.extra_effects([Effects.Lightning], exact=False))
+    print(recipe.is_valid, recipe.is_exact_recipe)
 
 
 if __name__ == "__main__":
