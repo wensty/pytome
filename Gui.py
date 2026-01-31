@@ -18,8 +18,6 @@ from Requirements import (
     AddOneIngredient,
     DullRecipe,
     ExcludeIngredient,
-    IsCertainBase,
-    IsNotCertainBase,
     LowlanderRecipe,
     StrongRecipe,
     WeakRecipe,
@@ -82,6 +80,47 @@ def _parse_effect_tiers(raw: str) -> dict[Effects, int]:
     return tiers
 
 
+def _parse_tristate(raw: str) -> bool | None:
+    value = raw.strip().lower()
+    if not value or value == "any":
+        return None
+    if value in {"yes", "true", "1"}:
+        return True
+    if value in {"no", "false", "0"}:
+        return False
+    raise ValueError(f"Unknown tristate value: {raw}")
+
+
+def _parse_ranges(raw: str, enum_cls: Type[EnumValue], name_attr: str | None = None) -> dict[EnumValue, tuple[float | None, float | None]]:
+    if not raw.strip():
+        return {}
+    lookup = _build_enum_lookup(enum_cls, name_attr)
+    ranges: dict[EnumValue, tuple[float | None, float | None]] = {}
+    for item in raw.split(","):
+        part = item.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            raise ValueError("Ranges must be in Name:min-max format.")
+        name, range_raw = part.split(":", 1)
+        key = _normalize_name(name)
+        if key not in lookup:
+            raise ValueError(f"Unknown {enum_cls.__name__} name: {name}")
+        range_raw = range_raw.strip()
+        if "-" in range_raw:
+            left, right = range_raw.split("-", 1)
+            min_value = float(left.strip()) if left.strip() else None
+            max_value = float(right.strip()) if right.strip() else None
+        else:
+            value = float(range_raw)
+            min_value = value
+            max_value = value
+        if min_value is not None and max_value is not None and min_value > max_value:
+            raise ValueError(f"Invalid range (min > max): {range_raw}")
+        ranges[lookup[key]] = (min_value, max_value)
+    return ranges
+
+
 def _parse_amounts(raw: str, enum_cls: Type[EnumValue], name_attr: str) -> dict[EnumValue, float]:
     if not raw.strip():
         return {}
@@ -108,6 +147,18 @@ def _parse_amounts(raw: str, enum_cls: Type[EnumValue], name_attr: str) -> dict[
 def _format_pairs(values: Sequence[tuple[str, float | int]]) -> str:
     parts = [f"{name}:{_format_count(value)}" for name, value in values if value]
     return ", ".join(parts) if parts else ""
+
+
+def _format_range(min_value: float | None, max_value: float | None) -> str:
+    if min_value is None:
+        if max_value is None:
+            return ""
+        return f"-{_format_count(max_value)}"
+    if max_value is None:
+        return f"{_format_count(min_value)}-"
+    if min_value == max_value:
+        return _format_count(min_value)
+    return f"{_format_count(min_value)}-{_format_count(max_value)}"
 
 
 def _validate_exact_requirements(effect_tiers: dict[Effects, int]) -> None:
@@ -184,6 +235,45 @@ def _upsert_pair_csv(var: tk.StringVar, name: str, value: float | int) -> None:
     var.set(", ".join(updated))
 
 
+def _upsert_range_csv(var: tk.StringVar, name: str, min_value: float | None, max_value: float | None) -> None:
+    name = name.strip()
+    if not name:
+        return
+    target_key = _normalize_name(name)
+    current = var.get().strip()
+    parts = [item.strip() for item in current.split(",") if item.strip()]
+    updated = []
+    replaced = False
+    for part in parts:
+        if ":" not in part:
+            updated.append(part)
+            continue
+        raw_name, _raw_range = part.split(":", 1)
+        if _normalize_name(raw_name) == target_key:
+            replaced = True
+            if min_value is None and max_value is None:
+                continue
+            updated.append(f"{name}:{_format_range(min_value, max_value)}")
+        else:
+            updated.append(part)
+    if not replaced and not (min_value is None and max_value is None):
+        updated.append(f"{name}:{_format_range(min_value, max_value)}")
+    var.set(", ".join(updated))
+
+
+def _parse_range_value(raw: str) -> tuple[float | None, float | None]:
+    value = raw.strip()
+    if not value:
+        return None, None
+    if "-" in value:
+        left, right = value.split("-", 1)
+        min_value = float(left.strip()) if left.strip() else None
+        max_value = float(right.strip()) if right.strip() else None
+        return min_value, max_value
+    number = float(value)
+    return number, number
+
+
 def _collect_potion_defs() -> dict[str, EffectTierList]:
     import Legendary
     import SingleEffect
@@ -206,14 +296,19 @@ def _collect_potion_defs() -> dict[str, EffectTierList]:
 def filter_recipes(
     db_path: str,
     required_effects: list[Effects],
-    required_effect_tiers: dict[Effects, int],
+    effect_ranges: dict[Effects, tuple[float | None, float | None]],
+    ingredient_ranges: dict[Ingredients, tuple[float | None, float | None]],
+    salt_ranges: dict[Salts, tuple[float | None, float | None]],
     ingredients_required: list[Ingredients],
     ingredients_forbidden: list[Ingredients],
-    include_hidden: bool,
+    hidden_filter: bool | None,
+    plotter_filter: bool | None,
+    discord_filter: bool | None,
     exact_mode: bool,
     require_weak: bool,
     require_strong: bool,
     half_ingredient: Ingredients | None,
+    base_list: list[PotionBases],
     base: PotionBases | None,
     not_base: PotionBases | None,
     lowlander: int | None,
@@ -228,15 +323,17 @@ def filter_recipes(
     weak_req = WeakRecipe(required_effects, exact_mode) if require_weak and required_effects else None
     strong_req = StrongRecipe(required_effects, exact_mode) if require_strong and required_effects else None
     dull_req = DullRecipe() if require_dull else None
-    base_req = IsCertainBase(base) if base is not None else None
-    not_base_req = IsNotCertainBase(not_base) if not_base is not None else None
     lowlander_req = LowlanderRecipe(lowlander) if lowlander is not None else None
     for recipe in recipes:
-        if not include_hidden and recipe.hidden:
+        if hidden_filter is True and not recipe.hidden:
             continue
-        if base_req and not base_req.is_satisfied(recipe):
+        if hidden_filter is False and recipe.hidden:
             continue
-        if not_base_req and not not_base_req.is_satisfied(recipe):
+        if base_list and recipe.base not in base_list:
+            continue
+        if base is not None and recipe.base != base:
+            continue
+        if not_base is not None and recipe.base == not_base:
             continue
         if dull_req and not dull_req.is_satisfied(recipe):
             continue
@@ -252,13 +349,55 @@ def filter_recipes(
             continue
         if accepted_req and not accepted_req.is_satisfied(recipe):
             continue
-        if required_effect_tiers and not all(recipe.effect_tier_list[effect] >= tier for effect, tier in required_effect_tiers.items()):
-            continue
+        if effect_ranges:
+            range_failed = False
+            for effect, (min_value, max_value) in effect_ranges.items():
+                value = recipe.effect_tier_list[effect]
+                if min_value is not None and value < min_value:
+                    range_failed = True
+                    break
+                if max_value is not None and value > max_value:
+                    range_failed = True
+                    break
+            if range_failed:
+                continue
+        if ingredient_ranges:
+            range_failed = False
+            for ingredient, (min_value, max_value) in ingredient_ranges.items():
+                value = recipe.ingredient_num_list[ingredient]
+                if min_value is not None and value < min_value:
+                    range_failed = True
+                    break
+                if max_value is not None and value > max_value:
+                    range_failed = True
+                    break
+            if range_failed:
+                continue
+        if salt_ranges:
+            range_failed = False
+            for salt, (min_value, max_value) in salt_ranges.items():
+                value = recipe.salt_grain_list[salt]
+                if min_value is not None and value < min_value:
+                    range_failed = True
+                    break
+                if max_value is not None and value > max_value:
+                    range_failed = True
+                    break
+            if range_failed:
+                continue
         if ingredients_required and not AddOneIngredient(ingredients_required[0]).is_satisfied(recipe):
             continue
         if ingredients_forbidden and not ExcludeIngredient(ingredients_forbidden[0]).is_satisfied(recipe):
             continue
         if half_ingredient is not None and not AddHalfIngredient(half_ingredient).is_satisfied(recipe):
+            continue
+        if plotter_filter is True and not recipe.plotter_link:
+            continue
+        if plotter_filter is False and recipe.plotter_link:
+            continue
+        if discord_filter is True and not recipe.discord_link:
+            continue
+        if discord_filter is False and recipe.discord_link:
             continue
         if extra_effects_min is not None and extra_effects:
             if count_extra_effects(recipe, extra_effects, exact=exact_mode) < extra_effects_min:
@@ -271,7 +410,7 @@ class FilterApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Tome Recipe Filter")
-        self.root.geometry("1000x720")
+        self.root.geometry("1200x900")
 
         # For macOS x compatibility.
         # TODO: add a custom theme for the app.
@@ -283,14 +422,24 @@ class FilterApp:
         self.db_path = tk.StringVar(value="data/tome.sqlite3")
 
         self.require_effects = tk.StringVar()
-        self.require_tiers = tk.StringVar()
+        self.effect_ranges = tk.StringVar()
+        self.ingredient_ranges = tk.StringVar()
+        self.salt_ranges = tk.StringVar()
         self.ingredients = tk.StringVar()
         self.no_ingredients = tk.StringVar()
         self.half_ingredient = tk.StringVar()
+        self.base_list = tk.StringVar()
         self.base = tk.StringVar()
         self.not_base = tk.StringVar()
         self.lowlander = tk.StringVar()
         self.extra_effects_min = tk.StringVar()
+        self.hidden_filter = tk.StringVar(value="Any")
+        self.plotter_filter = tk.StringVar(value="Any")
+        self.discord_filter = tk.StringVar(value="Any")
+        self.effect_range_value = tk.StringVar()
+        self.ingredient_range_value = tk.StringVar()
+        self.salt_range_value = tk.StringVar()
+        self.salt_range_select = tk.StringVar()
 
         self.exact_mode = tk.BooleanVar(value=False)
         self.require_weak = tk.BooleanVar(value=False)
@@ -300,7 +449,7 @@ class FilterApp:
         self.require_base_tier_check = tk.BooleanVar(value=False)
         self.include_hidden = tk.BooleanVar(value=False)
 
-        self.page_size = tk.StringVar(value="20")
+        self.page_size = tk.StringVar(value="15")
         self.last_results: list[Recipe] = []
         self.render_icons = tk.BooleanVar(value=False)
         self._icon_cache: dict[str, ImageTk.PhotoImage] = {}
@@ -332,15 +481,18 @@ class FilterApp:
         form.pack(fill=tk.X)
 
         self._add_row(form, 0, "Required effects (comma)", self.require_effects)
-        self._add_row(form, 1, "Required tiers (Effect:Tier)", self.require_tiers)
-        self._add_row(form, 2, "Ingredients (comma)", self.ingredients)
-        self._add_row(form, 3, "Exclude ingredients (comma)", self.no_ingredients)
-        self._add_row(form, 4, "Half ingredient", self.half_ingredient)
-        self._add_row(form, 5, "Base", self.base)
-        self._add_row(form, 6, "Not base", self.not_base)
-        self._add_row(form, 7, "Lowlander (max count)", self.lowlander)
-        self._add_row(form, 8, "Extra effects min", self.extra_effects_min)
-        self._add_row(form, 9, "Icon page size", self.page_size)
+        self._add_row(form, 1, "Effect ranges (Name:min-max)", self.effect_ranges)
+        self._add_row(form, 2, "Ingredient ranges (Name:min-max)", self.ingredient_ranges)
+        self._add_row(form, 3, "Salt ranges (Name:min-max)", self.salt_ranges)
+        self._add_row(form, 4, "Ingredients (comma)", self.ingredients)
+        self._add_row(form, 5, "Exclude ingredients (comma)", self.no_ingredients)
+        self._add_row(form, 6, "Half ingredient", self.half_ingredient)
+        self._add_row(form, 7, "Base list (comma)", self.base_list)
+        self._add_row(form, 8, "Base (single)", self.base)
+        self._add_row(form, 9, "Not base (single)", self.not_base)
+        self._add_row(form, 10, "Lowlander (max count)", self.lowlander)
+        self._add_row(form, 11, "Extra effects min", self.extra_effects_min)
+        self._add_row(form, 12, "Icon page size", self.page_size)
 
         selectors = ttk.LabelFrame(self.root, text="Selections", padding=10)
         selectors.pack(fill=tk.X, padx=10)
@@ -355,55 +507,107 @@ class FilterApp:
         self.potion_select = tk.StringVar()
 
         ttk.Label(selectors, text="Effect").grid(row=0, column=0, sticky=tk.W)
-        ttk.Combobox(selectors, textvariable=self.effect_select, values=effect_names, width=24).grid(row=0, column=1, sticky=tk.W)
+        ttk.Combobox(selectors, textvariable=self.effect_select, values=effect_names, width=16).grid(row=0, column=1, sticky=tk.W)
         ttk.Button(
             selectors,
             text="Add to Required Effects",
             command=lambda: _append_csv(self.require_effects, self.effect_select.get().strip()),
         ).grid(row=0, column=3, padx=5, sticky=tk.W)
 
-        ttk.Label(selectors, text="Tiered Effect").grid(row=1, column=0, sticky=tk.W)
-        ttk.Combobox(selectors, textvariable=self.tier_effect_select, values=effect_names, width=24).grid(row=1, column=1, sticky=tk.W)
-        ttk.Spinbox(selectors, from_=1, to=3, textvariable=self.tier_value, width=5).grid(row=1, column=2, sticky=tk.W)
+        ttk.Label(selectors, text="Effect Range").grid(row=1, column=0, sticky=tk.W)
+        ttk.Combobox(selectors, textvariable=self.tier_effect_select, values=effect_names, width=16).grid(row=1, column=1, sticky=tk.W)
+        ttk.Label(selectors, text="X-Y").grid(row=1, column=2, sticky=tk.W, padx=(6, 0))
+        ttk.Entry(selectors, textvariable=self.effect_range_value, width=8).grid(row=1, column=3, sticky=tk.W)
         ttk.Button(
             selectors,
-            text="Add to Required Tiers",
+            text="Set Effect Range",
             command=self._add_required_tier,
-        ).grid(row=1, column=3, padx=5, sticky=tk.W)
+        ).grid(row=1, column=4, padx=5, sticky=tk.W)
 
-        ttk.Label(selectors, text="Ingredient").grid(row=2, column=0, sticky=tk.W)
-        ttk.Combobox(selectors, textvariable=self.ingredient_select, values=ingredient_names, width=24).grid(row=2, column=1, sticky=tk.W)
+        ttk.Label(selectors, text="Ingredient Range").grid(row=2, column=0, sticky=tk.W)
+        ttk.Combobox(selectors, textvariable=self.ingredient_select, values=ingredient_names, width=16).grid(row=2, column=1, sticky=tk.W)
+        ttk.Label(selectors, text="X-Y").grid(row=2, column=2, sticky=tk.W, padx=(6, 0))
+        ttk.Entry(selectors, textvariable=self.ingredient_range_value, width=8).grid(row=2, column=3, sticky=tk.W)
+        ttk.Button(
+            selectors,
+            text="Set Ingredient Range",
+            command=self._add_ingredient_range,
+        ).grid(row=2, column=4, padx=5, sticky=tk.W)
+
+        ttk.Label(selectors, text="Salt Range").grid(row=3, column=0, sticky=tk.W)
+        ttk.Combobox(selectors, textvariable=self.salt_range_select, values=[salt.salt_name for salt in Salts], width=16).grid(row=3, column=1, sticky=tk.W)
+        ttk.Label(selectors, text="X-Y").grid(row=3, column=2, sticky=tk.W, padx=(6, 0))
+        ttk.Entry(selectors, textvariable=self.salt_range_value, width=8).grid(row=3, column=3, sticky=tk.W)
+        ttk.Button(
+            selectors,
+            text="Set Salt Range",
+            command=self._add_salt_range,
+        ).grid(row=3, column=4, padx=5, sticky=tk.W)
+
+        self.tier_effect_select.trace_add(
+            "write",
+            lambda *_args: self._sync_range_selection(
+                self.tier_effect_select,
+                self.effect_ranges,
+                Effects,
+                "effect_name",
+                self.effect_range_value,
+            ),
+        )
+        self.ingredient_select.trace_add(
+            "write",
+            lambda *_args: self._sync_range_selection(
+                self.ingredient_select,
+                self.ingredient_ranges,
+                Ingredients,
+                "ingredient_name",
+                self.ingredient_range_value,
+            ),
+        )
+        self.salt_range_select.trace_add(
+            "write",
+            lambda *_args: self._sync_range_selection(
+                self.salt_range_select,
+                self.salt_ranges,
+                Salts,
+                "salt_name",
+                self.salt_range_value,
+            ),
+        )
+
+        ttk.Label(selectors, text="Ingredient").grid(row=4, column=0, sticky=tk.W)
+        ttk.Combobox(selectors, textvariable=self.ingredient_select, values=ingredient_names, width=16).grid(row=4, column=1, sticky=tk.W)
         ttk.Button(
             selectors,
             text="Add to Ingredients",
             command=lambda: self._set_single_ingredient(self.ingredients, self.ingredient_select.get()),
-        ).grid(row=2, column=2, padx=5, sticky=tk.W)
+        ).grid(row=4, column=2, padx=5, sticky=tk.W)
         ttk.Button(
             selectors,
             text="Exclude Ingredient",
             command=lambda: self._set_single_ingredient(self.no_ingredients, self.ingredient_select.get()),
-        ).grid(row=2, column=3, padx=5, sticky=tk.W)
+        ).grid(row=4, column=3, padx=5, sticky=tk.W)
         ttk.Button(
             selectors,
             text="Half Ingredient",
             command=lambda: self._set_single_ingredient(self.half_ingredient, self.ingredient_select.get()),
-        ).grid(row=2, column=4, padx=5, sticky=tk.W)
+        ).grid(row=4, column=4, padx=5, sticky=tk.W)
         self.half_ingredient.trace_add("write", self._sync_half_ingredient)
 
-        ttk.Label(selectors, text="Base").grid(row=3, column=0, sticky=tk.W)
-        ttk.Combobox(selectors, textvariable=self.base, values=base_names, width=24).grid(row=3, column=1, sticky=tk.W)
-        ttk.Label(selectors, text="Not Base").grid(row=3, column=2, sticky=tk.W)
-        ttk.Combobox(selectors, textvariable=self.not_base, values=base_names, width=24).grid(row=3, column=3, sticky=tk.W)
+        ttk.Label(selectors, text="Base").grid(row=5, column=0, sticky=tk.W)
+        ttk.Combobox(selectors, textvariable=self.base, values=base_names, width=16).grid(row=5, column=1, sticky=tk.W)
+        ttk.Label(selectors, text="Not Base").grid(row=5, column=2, sticky=tk.W)
+        ttk.Combobox(selectors, textvariable=self.not_base, values=base_names, width=16).grid(row=5, column=3, sticky=tk.W)
 
         potion_defs = _collect_potion_defs()
         potion_names = list(potion_defs.keys())
-        ttk.Label(selectors, text="Potion").grid(row=4, column=0, sticky=tk.W)
-        ttk.Combobox(selectors, textvariable=self.potion_select, values=potion_names, width=40).grid(row=4, column=1, columnspan=2, sticky=tk.W)
+        ttk.Label(selectors, text="Potion").grid(row=6, column=0, sticky=tk.W)
+        ttk.Combobox(selectors, textvariable=self.potion_select, values=potion_names, width=26).grid(row=6, column=1, columnspan=2, sticky=tk.W)
         ttk.Button(
             selectors,
-            text="Set Required Tiers",
+            text="Set Effect Range",
             command=lambda: self._set_tiers_from_potion(potion_defs),
-        ).grid(row=4, column=3, padx=5, sticky=tk.W)
+        ).grid(row=6, column=3, padx=5, sticky=tk.W)
 
         checks = ttk.Frame(self.root, padding=10)
         checks.pack(fill=tk.X)
@@ -417,7 +621,12 @@ class FilterApp:
             text="Check Base+Dull Tier",
             variable=self.require_base_tier_check,
         ).grid(row=0, column=5)
-        ttk.Checkbutton(checks, text="Include Hidden", variable=self.include_hidden).grid(row=0, column=6)
+        ttk.Label(checks, text="Hidden").grid(row=0, column=6, padx=(10, 2))
+        ttk.Combobox(checks, textvariable=self.hidden_filter, values=["Any", "Yes", "No"], width=6).grid(row=0, column=7, sticky=tk.W)
+        ttk.Label(checks, text="Plotter").grid(row=0, column=8, padx=(10, 2))
+        ttk.Combobox(checks, textvariable=self.plotter_filter, values=["Any", "Yes", "No"], width=6).grid(row=0, column=9, sticky=tk.W)
+        ttk.Label(checks, text="Discord").grid(row=0, column=10, padx=(10, 2))
+        ttk.Combobox(checks, textvariable=self.discord_filter, values=["Any", "Yes", "No"], width=6).grid(row=0, column=11, sticky=tk.W)
 
         actions = ttk.Frame(self.root, padding=10)
         actions.pack(fill=tk.X)
@@ -709,11 +918,45 @@ class FilterApp:
 
     def _add_required_tier(self) -> None:
         effect_name = self.tier_effect_select.get().strip()
-        tier = self.tier_value.get().strip()
-        if not effect_name or not tier:
+        if not effect_name:
             return
-        entry = f"{effect_name}:{tier}"
-        _append_csv(self.require_tiers, entry)
+        try:
+            min_value, max_value = _parse_range_value(self.effect_range_value.get())
+        except ValueError:
+            messagebox.showerror("Invalid input", "Effect range must be X-Y, X-, -Y, or X.")
+            return
+        if min_value is not None and max_value is not None and min_value > max_value:
+            messagebox.showerror("Invalid input", "Effect range min must be <= max.")
+            return
+        _upsert_range_csv(self.effect_ranges, effect_name, min_value, max_value)
+
+    def _add_ingredient_range(self) -> None:
+        ingredient_name = self.ingredient_select.get().strip()
+        if not ingredient_name:
+            return
+        try:
+            min_value, max_value = _parse_range_value(self.ingredient_range_value.get())
+        except ValueError:
+            messagebox.showerror("Invalid input", "Ingredient range must be X-Y, X-, -Y, or X.")
+            return
+        if min_value is not None and max_value is not None and min_value > max_value:
+            messagebox.showerror("Invalid input", "Ingredient range min must be <= max.")
+            return
+        _upsert_range_csv(self.ingredient_ranges, ingredient_name, min_value, max_value)
+
+    def _add_salt_range(self) -> None:
+        salt_name = self.salt_range_select.get().strip()
+        if not salt_name:
+            return
+        try:
+            min_value, max_value = _parse_range_value(self.salt_range_value.get())
+        except ValueError:
+            messagebox.showerror("Invalid input", "Salt range must be X-Y, X-, -Y, or X.")
+            return
+        if min_value is not None and max_value is not None and min_value > max_value:
+            messagebox.showerror("Invalid input", "Salt range min must be <= max.")
+            return
+        _upsert_range_csv(self.salt_ranges, salt_name, min_value, max_value)
 
     def _sync_half_ingredient(self, *_args) -> None:
         raw = self.half_ingredient.get().strip()
@@ -728,6 +971,28 @@ class FilterApp:
         ingredient = values[0]
         self._set_single_ingredient(self.half_ingredient, ingredient.ingredient_name)
 
+    def _sync_range_selection(
+        self,
+        selection_var: tk.StringVar,
+        ranges_var: tk.StringVar,
+        enum_cls: Type[EnumValue],
+        name_attr: str | None,
+        range_var: tk.StringVar,
+    ) -> None:
+        name = selection_var.get().strip()
+        if not name:
+            return
+        try:
+            ranges = _parse_ranges(ranges_var.get(), enum_cls, name_attr)
+        except ValueError:
+            return
+        lookup = _build_enum_lookup(enum_cls, name_attr)
+        key = lookup.get(_normalize_name(name))
+        if key is None:
+            return
+        min_value, max_value = ranges.get(key, (None, None))
+        range_var.set(_format_range(min_value, max_value))
+
     def _set_tiers_from_potion(self, potion_defs: dict[str, EffectTierList]) -> None:
         key = self.potion_select.get().strip()
         potion = potion_defs.get(key)
@@ -738,30 +1003,41 @@ class FilterApp:
             tier = potion[effect.value]
             if tier > 0:
                 parts.append(f"{effect.name}:{tier}")
-        self.require_tiers.set(", ".join(parts))
+        self.effect_ranges.set(", ".join(parts))
 
     def _run_filter(self) -> None:
         try:
             required_effects = _parse_enum_list(self.require_effects.get(), Effects, "effect_name")
-            required_effect_tiers = _parse_effect_tiers(self.require_tiers.get())
-            _validate_exact_requirements(required_effect_tiers)
+            effect_ranges = _parse_ranges(self.effect_ranges.get(), Effects, "effect_name")
+            ingredient_ranges = _parse_ranges(self.ingredient_ranges.get(), Ingredients, "ingredient_name")
+            salt_ranges = _parse_ranges(self.salt_ranges.get(), Salts, "salt_name")
             ingredients_required = _parse_enum_list(self.ingredients.get(), Ingredients, "ingredient_name")
             ingredients_forbidden = _parse_enum_list(self.no_ingredients.get(), Ingredients, "ingredient_name")
             half_ingredient_list = _parse_enum_list(self.half_ingredient.get(), Ingredients, "ingredient_name")
             half_ingredient = half_ingredient_list[0] if half_ingredient_list else None
-            base_list = _parse_enum_list(self.base.get(), PotionBases)
-            base = base_list[0] if base_list else None
-            not_base_list = _parse_enum_list(self.not_base.get(), PotionBases)
-            not_base = not_base_list[0] if not_base_list else None
+            base_list = _parse_enum_list(self.base_list.get(), PotionBases)
+            base_values = _parse_enum_list(self.base.get(), PotionBases)
+            not_base_values = _parse_enum_list(self.not_base.get(), PotionBases)
+            base = base_values[0] if base_values else None
+            not_base = not_base_values[0] if not_base_values else None
             extra_effects = required_effects
             extra_effects_min = self.extra_effects_min.get().strip()
             extra_effects_min_value = int(extra_effects_min) if extra_effects_min else None
+            hidden_filter = _parse_tristate(self.hidden_filter.get())
+            plotter_filter = _parse_tristate(self.plotter_filter.get())
+            discord_filter = _parse_tristate(self.discord_filter.get())
 
             lowlander = self.lowlander.get().strip()
             lowlander_value = int(lowlander) if lowlander else None
 
+            if len(base_values) > 1:
+                raise ValueError("Base supports only one value.")
+            if len(not_base_values) > 1:
+                raise ValueError("Not base supports only one value.")
             if base and not_base:
                 raise ValueError("Base and Not Base are mutually exclusive.")
+            if base == PotionBases.Unknown or not_base == PotionBases.Unknown:
+                raise ValueError("Unknown base is not allowed in base restrictions.")
             if self.require_weak.get() and self.require_strong.get():
                 raise ValueError("Weak and Strong are mutually exclusive.")
             if lowlander_value == 1 and (ingredients_required or half_ingredient):
@@ -778,7 +1054,7 @@ class FilterApp:
                 raise ValueError("Exclude ingredient and half ingredient must be different.")
 
             requirement_groups = [
-                bool(required_effects or required_effect_tiers),
+                bool(required_effects),
                 bool(base or not_base),
                 bool(ingredients_required),
                 bool(ingredients_forbidden),
@@ -812,14 +1088,19 @@ class FilterApp:
             recipes = filter_recipes(
                 db_path=self.db_path.get(),
                 required_effects=required_effects,
-                required_effect_tiers=required_effect_tiers,
+                effect_ranges=effect_ranges,
+                ingredient_ranges=ingredient_ranges,
+                salt_ranges=salt_ranges,
                 ingredients_required=ingredients_required,
                 ingredients_forbidden=ingredients_forbidden,
-                include_hidden=self.include_hidden.get(),
+                hidden_filter=hidden_filter,
+                plotter_filter=plotter_filter,
+                discord_filter=discord_filter,
                 exact_mode=self.exact_mode.get(),
                 require_weak=self.require_weak.get(),
                 require_strong=self.require_strong.get(),
                 half_ingredient=half_ingredient,
+                base_list=base_list,
                 base=base,
                 not_base=not_base,
                 lowlander=lowlander_value,
