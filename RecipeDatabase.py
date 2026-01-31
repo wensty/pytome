@@ -12,17 +12,33 @@ from Recipes import IngredientNumList, Potion, Recipe, SaltGrainList
 DEFAULT_DB_PATH = pathlib.Path("data/tome.sqlite3")
 
 
+def _format_hash_number(value: float | int) -> str:
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return repr(value)
+    if isinstance(value, int):
+        return str(value)
+    return str(value)
+
+
 def _recipe_hash(recipe: Recipe) -> str:
     payload = "|".join(
         [
             str(int(recipe.base)),
             str(int(recipe.hidden)),
-            ",".join(str(value) for value in recipe.effect_tier_list),
-            ",".join(str(value) for value in recipe.ingredient_num_list),
-            ",".join(str(value) for value in recipe.salt_grain_list),
+            ",".join(_format_hash_number(value) for value in recipe.effect_tier_list),
+            ",".join(_format_hash_number(value) for value in recipe.ingredient_num_list),
+            ",".join(_format_hash_number(value) for value in recipe.salt_grain_list),
         ]
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def get_recipe_hash(recipe: Recipe) -> str:
+    return _recipe_hash(recipe)
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
@@ -142,12 +158,125 @@ def save_recipes(recipes: Iterable[Recipe], db_path: pathlib.Path = DEFAULT_DB_P
     return saved_count
 
 
+def _write_recipe_details(conn: sqlite3.Connection, recipe_id: int, recipe: Recipe) -> None:
+    conn.execute("DELETE FROM recipe_effects WHERE recipe_id = ?", (recipe_id,))
+    conn.execute("DELETE FROM recipe_ingredients WHERE recipe_id = ?", (recipe_id,))
+    conn.execute("DELETE FROM recipe_salts WHERE recipe_id = ?", (recipe_id,))
+
+    conn.executemany(
+        """
+        INSERT INTO recipe_effects (recipe_id, effect_id, tier)
+        VALUES (?, ?, ?)
+        """,
+        ((recipe_id, effect_id, int(tier)) for effect_id, tier in enumerate(recipe.effect_tier_list)),
+    )
+    conn.executemany(
+        """
+        INSERT INTO recipe_ingredients (recipe_id, ingredient_id, amount)
+        VALUES (?, ?, ?)
+        """,
+        ((recipe_id, ingredient_id, float(amount)) for ingredient_id, amount in enumerate(recipe.ingredient_num_list)),
+    )
+    conn.executemany(
+        """
+        INSERT INTO recipe_salts (recipe_id, salt_id, grains)
+        VALUES (?, ?, ?)
+        """,
+        ((recipe_id, salt_id, float(grains)) for salt_id, grains in enumerate(recipe.salt_grain_list)),
+    )
+
+
+def add_recipe(recipe: Recipe, db_path: pathlib.Path = DEFAULT_DB_PATH) -> int:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    recipe_hash = _recipe_hash(recipe)
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        cursor = conn.execute(
+            """
+            INSERT INTO recipes (base, hidden, plotter_link, discord_link, recipe_hash)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(recipe_hash) DO NOTHING
+            """,
+            (
+                int(recipe.base),
+                int(bool(recipe.hidden)),
+                recipe.plotter_link or "",
+                recipe.discord_link or "",
+                recipe_hash,
+            ),
+        )
+        row = conn.execute("SELECT id FROM recipes WHERE recipe_hash = ?", (recipe_hash,)).fetchone()
+        recipe_id = int(row[0])
+        if cursor.rowcount:
+            _write_recipe_details(conn, recipe_id, recipe)
+    return recipe_id
+
+
+def update_recipe_by_id(recipe_id: int, recipe: Recipe, db_path: pathlib.Path = DEFAULT_DB_PATH) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    _this_recipe_hash = _recipe_hash(recipe)
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        existing = conn.execute("SELECT id FROM recipes WHERE recipe_hash = ?", (_this_recipe_hash,)).fetchone()
+        if existing and int(existing[0]) != recipe_id:
+            raise ValueError("A different recipe already exists with the same hash.")
+        cursor = conn.execute(
+            """
+            UPDATE recipes
+            SET base = ?, hidden = ?, plotter_link = ?, discord_link = ?, recipe_hash = ?
+            WHERE id = ?
+            """,
+            (
+                int(recipe.base),
+                int(bool(recipe.hidden)),
+                recipe.plotter_link or "",
+                recipe.discord_link or "",
+                _this_recipe_hash,
+                recipe_id,
+            ),
+        )
+        if cursor.rowcount == 0:
+            raise ValueError(f"Recipe id {recipe_id} not found.")
+        _write_recipe_details(conn, recipe_id, recipe)
+
+
+def update_recipe_by_hash(recipe_hash: str, recipe: Recipe, db_path: pathlib.Path = DEFAULT_DB_PATH) -> None:
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        row = conn.execute("SELECT id FROM recipes WHERE recipe_hash = ?", (recipe_hash,)).fetchone()
+        if not row:
+            raise ValueError("Recipe hash not found.")
+        recipe_id = int(row[0])
+    update_recipe_by_id(recipe_id, recipe, db_path=db_path)
+
+
+def delete_recipe_by_id(recipe_id: int, db_path: pathlib.Path = DEFAULT_DB_PATH) -> bool:
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        cursor = conn.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
+    return cursor.rowcount > 0
+
+
+def delete_recipe_by_hash(recipe_hash: str, db_path: pathlib.Path = DEFAULT_DB_PATH) -> bool:
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        cursor = conn.execute("DELETE FROM recipes WHERE recipe_hash = ?", (recipe_hash,))
+    return cursor.rowcount > 0
+
+
+def recipe_hash_exists(recipe_hash: str, db_path: pathlib.Path = DEFAULT_DB_PATH) -> bool:
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        row = conn.execute("SELECT 1 FROM recipes WHERE recipe_hash = ? LIMIT 1", (recipe_hash,)).fetchone()
+    return row is not None
+
+
 def load_recipes(db_path: pathlib.Path = DEFAULT_DB_PATH) -> list[Recipe]:
     recipes: list[Recipe] = []
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         _ensure_schema(conn)
-        rows = conn.execute("SELECT id, base, hidden, plotter_link, discord_link FROM recipes").fetchall()
+        rows = conn.execute("SELECT id, base, hidden, plotter_link, discord_link, recipe_hash FROM recipes").fetchall()
         for row in rows:
             effect_tiers = [0] * NUMBER_OF_EFFECTS
             for effect_row in conn.execute(
@@ -179,6 +308,8 @@ def load_recipes(db_path: pathlib.Path = DEFAULT_DB_PATH) -> list[Recipe]:
                 plotter_link=row["plotter_link"],
                 hidden=bool(row["hidden"]),
             )
+            # recipe.recipe_id = int(row["id"])
+            # recipe.recipe_hash = row["recipe_hash"]
             recipes.append(recipe)
     return recipes
 
