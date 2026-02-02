@@ -62,7 +62,7 @@ class LowlanderRecipe(Requirements):
 
     @property
     def mult(self) -> float:
-        return [1.0, 1.5, 2.0, 3.0][self.k]
+        return [3.0, 2.0, 1.5][self.k - 1]
 
 
 class WeakRecipe(Requirements):

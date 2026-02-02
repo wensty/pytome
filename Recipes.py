@@ -1,9 +1,11 @@
 import pickle
 import gzip
 from collections.abc import Sequence, Iterable
+from typing import Optional
 
 from Effects import NUMBER_OF_EFFECTS, Effects, PotionBases
 from Ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS, Ingredients, Salts
+
 
 with gzip.open("data/Compatibility.pkl.gz", "rb") as f:
     Compatibility: list[list[int]] = pickle.load(f)
@@ -115,7 +117,22 @@ class Recipe:
     def is_exact_recipe(self) -> bool:
         return (sum(self.effect_tier_list) <= 5) and all(0 <= tier <= 3 for tier in self.effect_tier_list)
 
-    # TODO: price calculation
+    # calculate the base price of a recipe.
+    def base_price(self, required_effects: Optional[list[Effects]] = None) -> float:
+        # Provide none to calculate merchant base price (requesting all effects.)
+        _tier_mult = [0, 0.4, 0.7, 1.0]
+        _required_effects = required_effects if required_effects is not None else list(Effects)
+        _base_price = 0.0
+        for effect in _required_effects:
+            _this_effect_tier = self.effect_tier_list[effect]
+            for extra_effect in Effects:
+                if Compatibility[effect][extra_effect] == 0:
+                    _this_effect_tier -= self.effect_tier_list[extra_effect]
+                    if _this_effect_tier <= 0:
+                        break
+            if _this_effect_tier > 0:
+                _base_price += _tier_mult[_this_effect_tier] * effect.base_price
+        return _base_price
 
 
 def test():

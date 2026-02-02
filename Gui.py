@@ -12,13 +12,19 @@ from PIL import Image, ImageTk
 from Effects import Effects, PotionBases
 from Ingredients import Ingredients, Salts
 from RecipeDatabase import add_recipe, delete_recipe_by_hash, get_recipe_hash, load_recipes, recipe_hash_exists, update_recipe_by_hash
+from Profit import Difficulty, ProfitStat, calculate_profit
+from CustomerDatabase import build_customer_database, load_customer_requests, load_story_lines
 from Requirements import (
     Accepted,
     AddHalfIngredient,
     AddOneIngredient,
     DullRecipe,
     ExcludeIngredient,
+    ExtraEffects,
+    IsCertainBase,
+    IsNotCertainBase,
     LowlanderRecipe,
+    Requirements,
     StrongRecipe,
     WeakRecipe,
     count_extra_effects,
@@ -412,12 +418,9 @@ class FilterApp:
         self.root.title("Tome Recipe Filter")
         self.root.geometry("1200x900")
 
-        # For macOS x compatibility.
         # TODO: add a custom theme for the app.
 
         self.style = ttk.Style(root)
-        # self.style.theme_use("classic")
-        # self.style.configure("Tome.TFrame", background="#dbc4a0")
 
         self.db_path = tk.StringVar(value="data/tome.sqlite3")
 
@@ -440,6 +443,42 @@ class FilterApp:
         self.ingredient_range_value = tk.StringVar()
         self.salt_range_value = tk.StringVar()
         self.salt_range_select = tk.StringVar()
+        self.profit_recipe_index = tk.StringVar()
+        self.profit_required_effects = tk.StringVar()
+        self.profit_exact = tk.BooleanVar(value=False)
+        self.profit_difficulty = tk.StringVar(value=Difficulty.Explorer.name)
+        self.profit_popularity = tk.StringVar(value="15")
+        self.profit_trading = tk.StringVar(value="20")
+        self.profit_sell_to_merchant = tk.StringVar(value="2")
+        self.profit_potion_promotion = tk.StringVar(value="5")
+        self.profit_great_demand = tk.StringVar(value="2")
+        self.profit_customers_served = tk.StringVar(value="18")
+        self.profit_talented_seller = tk.StringVar(value="0")
+        self.profit_request_dull = tk.BooleanVar(value=False)
+        self.profit_request_weak = tk.BooleanVar(value=False)
+        self.profit_request_strong = tk.BooleanVar(value=False)
+        self.profit_request_extra = tk.BooleanVar(value=False)
+        self.profit_lowlander = tk.StringVar()
+        self.profit_add_ingredient = tk.StringVar()
+        self.profit_half_ingredient = tk.StringVar()
+        self.profit_exclude_ingredient = tk.StringVar()
+        self.profit_base = tk.StringVar()
+        self.profit_not_base = tk.StringVar()
+        self.profit_recipe_base = tk.StringVar(value=PotionBases.Water.name)
+        self.profit_recipe_effects = tk.StringVar()
+        self.profit_recipe_ingredients = tk.StringVar()
+        self.profit_recipe_salts = tk.StringVar()
+        self.profit_recipe_effect_select = tk.StringVar()
+        self.profit_recipe_effect_tier = tk.StringVar(value="1")
+        self.profit_recipe_ingredient_select = tk.StringVar()
+        self.profit_recipe_ingredient_amount = tk.StringVar(value="1")
+        self.profit_recipe_salt_select = tk.StringVar()
+        self.profit_recipe_salt_amount = tk.StringVar(value="1")
+        self.customer_text = tk.StringVar()
+        self.customer_effects = tk.StringVar()
+        self.customer_effect_select = tk.StringVar()
+        self.customer_carma = tk.StringVar(value="nonnegative")
+        self.customer_story_vars: dict[str, tk.BooleanVar] = {}
 
         self.exact_mode = tk.BooleanVar(value=False)
         self.require_weak = tk.BooleanVar(value=False)
@@ -471,13 +510,23 @@ class FilterApp:
         self._build_ui()
 
     def _build_ui(self) -> None:
-        top = ttk.Frame(self.root, padding=10, style="Tome.TFrame")
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill=tk.BOTH, expand=True)
+
+        filter_tab = ttk.Frame(notebook)
+        profit_tab = ttk.Frame(notebook)
+        customer_tab = ttk.Frame(notebook)
+        notebook.add(filter_tab, text="Filter")
+        notebook.add(profit_tab, text="Profit")
+        notebook.add(customer_tab, text="Customers")
+
+        top = ttk.Frame(filter_tab, padding=10, style="Tome.TFrame")
         top.pack(fill=tk.X)
 
         ttk.Entry(top, textvariable=self.db_path, width=60).grid(row=0, column=1, sticky=tk.W)
         ttk.Button(top, text="Browse", command=self._browse_db).grid(row=0, column=2, padx=5)
 
-        form = ttk.Frame(self.root, padding=10, style="Tome.TFrame")
+        form = ttk.Frame(filter_tab, padding=10, style="Tome.TFrame")
         form.pack(fill=tk.X)
 
         self._add_row(form, 0, "Required effects (comma)", self.require_effects)
@@ -494,7 +543,7 @@ class FilterApp:
         self._add_row(form, 11, "Extra effects min", self.extra_effects_min)
         self._add_row(form, 12, "Icon page size", self.page_size)
 
-        selectors = ttk.LabelFrame(self.root, text="Selections", padding=10)
+        selectors = ttk.LabelFrame(filter_tab, text="Selections", padding=10)
         selectors.pack(fill=tk.X, padx=10)
 
         effect_names = [effect.name for effect in Effects]
@@ -609,7 +658,7 @@ class FilterApp:
             command=lambda: self._set_tiers_from_potion(potion_defs),
         ).grid(row=6, column=3, padx=5, sticky=tk.W)
 
-        checks = ttk.Frame(self.root, padding=10)
+        checks = ttk.Frame(filter_tab, padding=10)
         checks.pack(fill=tk.X)
         ttk.Checkbutton(checks, text="Exact Mode", variable=self.exact_mode).grid(row=0, column=0)
         ttk.Checkbutton(checks, text="Weak", variable=self.require_weak).grid(row=0, column=1)
@@ -628,13 +677,13 @@ class FilterApp:
         ttk.Label(checks, text="Discord").grid(row=0, column=10, padx=(10, 2))
         ttk.Combobox(checks, textvariable=self.discord_filter, values=["Any", "Yes", "No"], width=6).grid(row=0, column=11, sticky=tk.W)
 
-        actions = ttk.Frame(self.root, padding=10)
+        actions = ttk.Frame(filter_tab, padding=10)
         actions.pack(fill=tk.X)
         ttk.Button(actions, text="Filter", command=self._run_filter).grid(row=0, column=0, padx=10)
         ttk.Button(actions, text="Export", command=self._export_results).grid(row=0, column=1)
         ttk.Checkbutton(actions, text="Show Icons", variable=self.render_icons).grid(row=0, column=2, padx=10)
 
-        output_frame = ttk.Frame(self.root, padding=10)
+        output_frame = ttk.Frame(filter_tab, padding=10)
         output_frame.pack(fill=tk.BOTH, expand=True)
         self.output = tk.Text(output_frame, wrap=tk.WORD)
         self.output.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -642,19 +691,25 @@ class FilterApp:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.output["yscrollcommand"] = scrollbar.set
 
+        self._build_profit_tab(profit_tab)
+        self._build_customer_tab(customer_tab)
+
     def _open_recipe_editor(
         self,
-        parent: tk.Toplevel,
+        parent: tk.Misc,
         title: str,
         recipe: Recipe | None,
         on_save,
     ) -> None:
         dialog = tk.Toplevel(parent)
         dialog.title(title)
-        dialog.transient(parent)
+        dialog.transient(cast(tk.Wm, parent))
         dialog.grab_set()
 
         base_names = [base.name for base in PotionBases]
+        effect_names = [effect.effect_name for effect in Effects]
+        ingredient_names = [ingredient.ingredient_name for ingredient in Ingredients]
+        salt_names = [salt.salt_name for salt in Salts]
         base_var = tk.StringVar(value=PotionBases(recipe.base).name if recipe else PotionBases.Water.name)
         plotter_var = tk.StringVar(value=recipe.plotter_link if recipe else "")
         discord_var = tk.StringVar(value=recipe.discord_link if recipe else "")
@@ -886,6 +941,160 @@ class FilterApp:
 
         ttk.Button(dialog, text="Save", command=_save).grid(row=7, column=2, sticky="e", padx=8, pady=8)
 
+    def _build_profit_tab(self, parent: ttk.Frame) -> None:
+        header = ttk.Frame(parent, padding=10)
+        header.pack(fill=tk.X)
+        ttk.Label(header, text="Profit Predictor").pack(anchor="w")
+
+        form = ttk.Frame(parent, padding=10)
+        form.pack(fill=tk.X)
+
+        ttk.Label(form, text="Recipe Index (from last results)").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Entry(form, textvariable=self.profit_recipe_index, width=10).grid(row=0, column=1, sticky="w", pady=2)
+        ttk.Button(form, text="Import from List", command=self._import_profit_recipe).grid(row=0, column=2, padx=6)
+
+        stats = ttk.LabelFrame(parent, text="Profit Stats", padding=10)
+        stats.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        ttk.Label(stats, text="Difficulty").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Combobox(
+            stats,
+            textvariable=self.profit_difficulty,
+            values=[d.name for d in Difficulty],
+            width=14,
+        ).grid(row=0, column=1, sticky="w", pady=2)
+        ttk.Label(stats, text="Popularity").grid(row=0, column=3, sticky="w", pady=2)
+        ttk.Entry(stats, textvariable=self.profit_popularity, width=10).grid(row=0, column=4, sticky="w", pady=2)
+
+        ttk.Label(stats, text="Trading").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(stats, textvariable=self.profit_trading, width=10).grid(row=1, column=1, sticky="w", pady=2)
+        ttk.Button(stats, text="Max", command=lambda: self.profit_trading.set("20")).grid(row=1, column=2, padx=6)
+        ttk.Label(stats, text="Sell to Merchant").grid(row=1, column=3, sticky="w", pady=2)
+        ttk.Entry(stats, textvariable=self.profit_sell_to_merchant, width=10).grid(row=1, column=4, sticky="w", pady=2)
+        ttk.Button(stats, text="Max", command=lambda: self.profit_sell_to_merchant.set("2")).grid(row=1, column=5, padx=6)
+
+        ttk.Label(stats, text="Potion Promotion").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Entry(stats, textvariable=self.profit_potion_promotion, width=10).grid(row=2, column=1, sticky="w", pady=2)
+        ttk.Button(stats, text="Max", command=lambda: self.profit_potion_promotion.set("5")).grid(row=2, column=2, padx=6)
+        ttk.Label(stats, text="Great Demand").grid(row=2, column=3, sticky="w", pady=2)
+        ttk.Entry(stats, textvariable=self.profit_great_demand, width=10).grid(row=2, column=4, sticky="w", pady=2)
+        ttk.Button(stats, text="Max", command=lambda: self.profit_great_demand.set("2")).grid(row=2, column=5, padx=6)
+
+        ttk.Label(stats, text="Customers Served").grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Entry(stats, textvariable=self.profit_customers_served, width=10).grid(row=3, column=1, sticky="w", pady=2)
+        ttk.Label(stats, text="Talented Seller").grid(row=3, column=3, sticky="w", pady=2)
+        ttk.Entry(stats, textvariable=self.profit_talented_seller, width=10).grid(row=3, column=4, sticky="w", pady=2)
+
+        editor = ttk.LabelFrame(parent, text="Profit Recipe Editor", padding=10)
+        editor.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        base_names = [base.name for base in PotionBases]
+        effect_names = [effect.effect_name for effect in Effects]
+        ingredient_names = [ingredient.ingredient_name for ingredient in Ingredients]
+        salt_names = [salt.salt_name for salt in Salts]
+        ttk.Label(editor, text="Base").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Combobox(editor, textvariable=self.profit_recipe_base, values=base_names, width=16).grid(row=0, column=1, sticky="w", pady=2)
+
+        ttk.Label(editor, text="Effects (Name:Tier)").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(editor, textvariable=self.profit_recipe_effects, width=48).grid(row=1, column=1, columnspan=2, sticky="w", pady=2)
+        ttk.Combobox(editor, textvariable=self.profit_recipe_effect_select, values=effect_names, width=16).grid(row=1, column=3, sticky="w", pady=2)
+        ttk.Entry(editor, textvariable=self.profit_recipe_effect_tier, width=5).grid(row=1, column=4, sticky="w", pady=2)
+        ttk.Button(editor, text="Set", command=self._add_profit_recipe_effect).grid(row=1, column=5, padx=6)
+
+        ttk.Label(editor, text="Ingredients (Name:Amount)").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Entry(editor, textvariable=self.profit_recipe_ingredients, width=48).grid(row=2, column=1, columnspan=2, sticky="w", pady=2)
+        ttk.Combobox(editor, textvariable=self.profit_recipe_ingredient_select, values=ingredient_names, width=16).grid(row=2, column=3, sticky="w", pady=2)
+        ttk.Entry(editor, textvariable=self.profit_recipe_ingredient_amount, width=5).grid(row=2, column=4, sticky="w", pady=2)
+        ttk.Button(editor, text="Set", command=self._add_profit_recipe_ingredient).grid(row=2, column=5, padx=6)
+
+        ttk.Label(editor, text="Salts (Name:Amount)").grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Entry(editor, textvariable=self.profit_recipe_salts, width=48).grid(row=3, column=1, columnspan=2, sticky="w", pady=2)
+        ttk.Combobox(editor, textvariable=self.profit_recipe_salt_select, values=salt_names, width=16).grid(row=3, column=3, sticky="w", pady=2)
+        ttk.Entry(editor, textvariable=self.profit_recipe_salt_amount, width=5).grid(row=3, column=4, sticky="w", pady=2)
+        ttk.Button(editor, text="Set", command=self._add_profit_recipe_salt).grid(row=3, column=5, padx=6)
+
+        required = ttk.LabelFrame(parent, text="Required Effects", padding=10)
+        required.pack(fill=tk.X, padx=10, pady=(0, 10))
+        ttk.Entry(required, textvariable=self.profit_required_effects, width=60).grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(required, text="Exact", variable=self.profit_exact).grid(row=0, column=1, padx=6, sticky="w")
+        ttk.Button(required, text="Add from Selector", command=self._add_profit_required_effect).grid(row=0, column=2, padx=6)
+
+        requests = ttk.LabelFrame(parent, text="Customer Requests", padding=10)
+        requests.pack(fill=tk.X, padx=10, pady=(5, 10))
+
+        ttk.Checkbutton(requests, text="Dull", variable=self.profit_request_dull).grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(requests, text="Weak", variable=self.profit_request_weak).grid(row=0, column=1, sticky="w")
+        ttk.Checkbutton(requests, text="Strong", variable=self.profit_request_strong).grid(row=0, column=2, sticky="w")
+        ttk.Checkbutton(requests, text="Extra Effects", variable=self.profit_request_extra).grid(row=0, column=3, sticky="w")
+
+        ingredient_names = [ingredient.ingredient_name for ingredient in Ingredients]
+        base_names = [base.name for base in PotionBases if base != PotionBases.Unknown]
+
+        ttk.Label(requests, text="Lowlander").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(requests, textvariable=self.profit_lowlander, width=6).grid(row=1, column=1, sticky="w", pady=2)
+        ttk.Label(requests, text="Add Ingredient").grid(row=1, column=2, sticky="w", padx=(10, 0))
+        ttk.Combobox(requests, textvariable=self.profit_add_ingredient, values=ingredient_names, width=16).grid(row=1, column=3, sticky="w", pady=2)
+
+        ttk.Label(requests, text="Half Ingredient").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Combobox(requests, textvariable=self.profit_half_ingredient, values=ingredient_names, width=16).grid(row=2, column=1, sticky="w", pady=2)
+        ttk.Label(requests, text="Exclude Ingredient").grid(row=2, column=2, sticky="w", padx=(10, 0))
+        ttk.Combobox(requests, textvariable=self.profit_exclude_ingredient, values=ingredient_names, width=16).grid(row=2, column=3, sticky="w", pady=2)
+
+        ttk.Label(requests, text="Base").grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Combobox(requests, textvariable=self.profit_base, values=base_names, width=16).grid(row=3, column=1, sticky="w", pady=2)
+        ttk.Label(requests, text="Not Base").grid(row=3, column=2, sticky="w", padx=(10, 0))
+        ttk.Combobox(requests, textvariable=self.profit_not_base, values=base_names, width=16).grid(row=3, column=3, sticky="w", pady=2)
+
+        output = ttk.Frame(parent, padding=10)
+        output.pack(fill=tk.X)
+        self.profit_output = ttk.Label(output, text="Profit: -")
+        self.profit_output.pack(anchor="w")
+
+        ttk.Button(output, text="Calculate Profit", command=self._calculate_profit).pack(anchor="w", pady=4)
+
+    def _build_customer_tab(self, parent: ttk.Frame) -> None:
+        header = ttk.Frame(parent, padding=10)
+        header.pack(fill=tk.X)
+        ttk.Label(header, text="Customer Requests Search").pack(anchor="w")
+
+        controls = ttk.Frame(parent, padding=10)
+        controls.pack(fill=tk.X)
+        ttk.Button(controls, text="Build Customer DB", command=self._build_customer_db).pack(side=tk.LEFT, padx=6)
+
+        filters = ttk.LabelFrame(parent, text="Filters", padding=10)
+        filters.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        ttk.Label(filters, text="Text").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Entry(filters, textvariable=self.customer_text, width=50).grid(row=0, column=1, columnspan=3, sticky="w", pady=2)
+
+        effect_names = [effect.effect_name for effect in Effects]
+        ttk.Label(filters, text="Effect").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Combobox(filters, textvariable=self.customer_effect_select, values=effect_names, width=20).grid(row=1, column=1, sticky="w", pady=2)
+        ttk.Button(filters, text="Add Effect", command=self._add_customer_effect).grid(row=1, column=2, padx=6)
+        ttk.Entry(filters, textvariable=self.customer_effects, width=50).grid(row=1, column=3, sticky="w", pady=2)
+
+        ttk.Label(filters, text="Carma").grid(row=2, column=0, sticky="w", pady=2)
+        ttk.Radiobutton(filters, text="Any", variable=self.customer_carma, value="any").grid(row=2, column=1, sticky="w")
+        ttk.Radiobutton(filters, text="Nonnegative", variable=self.customer_carma, value="nonnegative").grid(row=2, column=2, sticky="w")
+        ttk.Radiobutton(filters, text="Nonpositive", variable=self.customer_carma, value="nonpositive").grid(row=2, column=3, sticky="w")
+
+        story_frame = ttk.LabelFrame(parent, text="Story Lines", padding=10)
+        story_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        self.customer_story_container = story_frame
+        self._refresh_story_lines()
+
+        actions = ttk.Frame(parent, padding=10)
+        actions.pack(fill=tk.X)
+        ttk.Button(actions, text="Search", command=self._search_customers).pack(side=tk.LEFT, padx=6)
+
+        output = ttk.Frame(parent, padding=10)
+        output.pack(fill=tk.BOTH, expand=True)
+        self.customer_output = tk.Text(output, wrap=tk.WORD)
+        self.customer_output.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar = ttk.Scrollbar(output, command=self.customer_output.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.customer_output["yscrollcommand"] = scrollbar.set
+
     def _add_row(self, parent: ttk.Frame, row: int, label: str, var: tk.StringVar) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky=tk.W, pady=2)
         ttk.Entry(parent, textvariable=var, width=60).grid(row=row, column=1, sticky=tk.W, pady=2)
@@ -957,6 +1166,232 @@ class FilterApp:
             messagebox.showerror("Invalid input", "Salt range min must be <= max.")
             return
         _upsert_range_csv(self.salt_ranges, salt_name, min_value, max_value)
+
+    def _calculate_profit(self) -> None:
+        try:
+            recipe = self._build_profit_recipe()
+
+            required_effects = _parse_enum_list(self.profit_required_effects.get(), Effects, "effect_name")
+
+            def _read_int(value: str, label: str, min_value: int = 0, max_value: int | None = None) -> int:
+                try:
+                    number = int(value or 0)
+                except ValueError as exc:
+                    raise ValueError(f"{label} must be an integer.") from exc
+                if number < min_value:
+                    raise ValueError(f"{label} must be >= {min_value}.")
+                if max_value is not None and number > max_value:
+                    raise ValueError(f"{label} must be <= {max_value}.")
+                return number
+
+            profit_stat = ProfitStat(
+                difficulty=Difficulty[self.profit_difficulty.get()],
+                popularity=_read_int(self.profit_popularity.get(), "Popularity"),
+                trading=_read_int(self.profit_trading.get(), "Trading", max_value=20),
+                sell_potions_to_merchant=_read_int(self.profit_sell_to_merchant.get(), "Sell to Merchant", max_value=2),
+                potion_promotion=_read_int(self.profit_potion_promotion.get(), "Potion Promotion", max_value=5),
+                great_potion_demand=_read_int(self.profit_great_demand.get(), "Great Demand", max_value=2),
+                customers_served=_read_int(self.profit_customers_served.get(), "Customers Served"),
+                talented_potion_seller=_read_int(self.profit_talented_seller.get(), "Talented Seller"),
+            )
+
+            requests: list[Requirements] = []
+            exact = self.profit_exact.get()
+            if self.profit_request_dull.get():
+                requests.append(DullRecipe())
+            if self.profit_lowlander.get().strip():
+                requests.append(LowlanderRecipe(int(self.profit_lowlander.get())))
+            if self.profit_add_ingredient.get().strip():
+                ingredient = _parse_enum_list(self.profit_add_ingredient.get(), Ingredients, "ingredient_name")[0]
+                requests.append(AddOneIngredient(ingredient))
+            if self.profit_half_ingredient.get().strip():
+                ingredient = _parse_enum_list(self.profit_half_ingredient.get(), Ingredients, "ingredient_name")[0]
+                requests.append(AddHalfIngredient(ingredient))
+            if self.profit_exclude_ingredient.get().strip():
+                ingredient = _parse_enum_list(self.profit_exclude_ingredient.get(), Ingredients, "ingredient_name")[0]
+                requests.append(ExcludeIngredient(ingredient))
+            if self.profit_base.get().strip():
+                base = _parse_enum_list(self.profit_base.get(), PotionBases)[0]
+                requests.append(IsCertainBase(base))
+            if self.profit_not_base.get().strip():
+                base = _parse_enum_list(self.profit_not_base.get(), PotionBases)[0]
+                requests.append(IsNotCertainBase(base))
+            if self.profit_request_weak.get():
+                if not required_effects:
+                    raise ValueError("Weak request requires required effects.")
+                requests.append(WeakRecipe(required_effects, exact))
+            if self.profit_request_strong.get():
+                if not required_effects:
+                    raise ValueError("Strong request requires required effects.")
+                requests.append(StrongRecipe(required_effects, exact))
+            if self.profit_request_extra.get():
+                if not required_effects:
+                    raise ValueError("Extra effects request requires required effects.")
+                requests.append(ExtraEffects(required_effects, exact))
+
+            if len(requests) > 4:
+                raise ValueError("Customers can only make up to 4 requests.")
+
+            profit = calculate_profit(
+                recipe,
+                profit_stat,
+                required_effects=required_effects if required_effects else None,
+                requests=requests if requests else None,
+            )
+            self.profit_output.configure(text=f"Profit: {profit:.1f}")
+        except (ValueError, KeyError) as exc:
+            messagebox.showerror("Profit Calculator", str(exc))
+
+    def _import_profit_recipe(self) -> None:
+        index_raw = self.profit_recipe_index.get().strip()
+        if not index_raw:
+            messagebox.showerror("Profit Calculator", "Recipe index is required.")
+            return
+        try:
+            recipe_index = int(index_raw)
+        except ValueError:
+            messagebox.showerror("Profit Calculator", "Recipe index must be an integer.")
+            return
+        if recipe_index < 0 or recipe_index >= len(self.last_results):
+            messagebox.showerror("Profit Calculator", "Recipe index out of range.")
+            return
+        recipe = self.last_results[recipe_index]
+        self._apply_profit_recipe(recipe)
+
+    def _apply_profit_recipe(self, recipe: Recipe) -> None:
+        self.profit_recipe_base.set(PotionBases(recipe.base).name)
+        self.profit_recipe_effects.set(_format_pairs([(Effects(i).effect_name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0]))
+        self.profit_recipe_ingredients.set(
+            _format_pairs([(Ingredients(i).ingredient_name, amount) for i, amount in enumerate(recipe.ingredient_num_list) if amount > 0])
+        )
+        self.profit_recipe_salts.set(_format_pairs([(Salts(i).salt_name, grains) for i, grains in enumerate(recipe.salt_grain_list) if grains > 0]))
+
+    def _build_profit_recipe(self) -> Recipe:
+        try:
+            base = PotionBases[self.profit_recipe_base.get().strip()]
+        except KeyError as exc:
+            raise ValueError("Unknown base name.") from exc
+        effect_tiers = _parse_effect_tiers(self.profit_recipe_effects.get())
+        ingredient_amounts = _parse_amounts(self.profit_recipe_ingredients.get(), Ingredients, "ingredient_name")
+        salt_amounts = _parse_amounts(self.profit_recipe_salts.get(), Salts, "salt_name")
+
+        effect_tier_list = [0] * len(Effects)
+        for effect, tier in effect_tiers.items():
+            effect_tier_list[int(effect)] = int(tier)
+        ingredient_num_list = [0.0] * len(Ingredients)
+        for ingredient, amount in ingredient_amounts.items():
+            ingredient_num_list[int(ingredient)] = float(amount)
+        salt_grain_list = [0.0] * len(Salts)
+        for salt, grains in salt_amounts.items():
+            salt_grain_list[int(salt)] = float(grains)
+
+        return Recipe(
+            base=base,
+            effect_tier_list=EffectTierList(effect_tier_list),
+            ingredient_num_list=IngredientNumList(cast(list[int], ingredient_num_list)),
+            salt_grain_list=SaltGrainList(cast(list[int], salt_grain_list)),
+            discord_link="",
+            plotter_link="",
+            hidden=False,
+        )
+
+    def _add_profit_required_effect(self) -> None:
+        name = self.profit_recipe_effect_select.get().strip()
+        if not name:
+            return
+        _append_csv(self.profit_required_effects, name)
+
+    def _add_customer_effect(self) -> None:
+        name = self.customer_effect_select.get().strip()
+        if not name:
+            return
+        _append_csv(self.customer_effects, name)
+
+    def _add_profit_recipe_effect(self) -> None:
+        name = self.profit_recipe_effect_select.get().strip()
+        tier_raw = self.profit_recipe_effect_tier.get().strip()
+        if not name:
+            return
+        try:
+            tier = int(tier_raw)
+        except ValueError:
+            messagebox.showerror("Profit Recipe", "Effect tier must be an integer.")
+            return
+        if tier < 0 or tier > 3:
+            messagebox.showerror("Profit Recipe", "Effect tier must be in [0, 3].")
+            return
+        _upsert_pair_csv(self.profit_recipe_effects, name, tier)
+
+    def _add_profit_recipe_ingredient(self) -> None:
+        name = self.profit_recipe_ingredient_select.get().strip()
+        value_raw = self.profit_recipe_ingredient_amount.get().strip()
+        if not name:
+            return
+        try:
+            value = float(value_raw)
+        except ValueError:
+            messagebox.showerror("Profit Recipe", "Ingredient amount must be a number.")
+            return
+        if value < 0:
+            messagebox.showerror("Profit Recipe", "Ingredient amount must be >= 0.")
+            return
+        _upsert_pair_csv(self.profit_recipe_ingredients, name, value)
+
+    def _add_profit_recipe_salt(self) -> None:
+        name = self.profit_recipe_salt_select.get().strip()
+        value_raw = self.profit_recipe_salt_amount.get().strip()
+        if not name:
+            return
+        try:
+            value = float(value_raw)
+        except ValueError:
+            messagebox.showerror("Profit Recipe", "Salt amount must be a number.")
+            return
+        if value < 0:
+            messagebox.showerror("Profit Recipe", "Salt amount must be >= 0.")
+            return
+        _upsert_pair_csv(self.profit_recipe_salts, name, value)
+
+    def _build_customer_db(self) -> None:
+        db_path = Path(self.db_path.get())
+        count = build_customer_database(db_path=db_path)
+        messagebox.showinfo("Customer DB", f"Saved {count} customer requests.")
+        self._refresh_story_lines()
+
+    def _refresh_story_lines(self) -> None:
+        container = self.customer_story_container
+        for child in container.winfo_children():
+            child.destroy()
+        self.customer_story_vars = {}
+        story_lines = load_story_lines(db_path=Path(self.db_path.get()))
+        story_lines = [""] + [line for line in story_lines if line]
+        for idx, story_line in enumerate(story_lines):
+            label = "Normal" if story_line == "" else story_line
+            var = tk.BooleanVar(value=(story_line == ""))
+            self.customer_story_vars[story_line] = var
+            ttk.Checkbutton(container, text=label, variable=var).grid(row=idx // 6, column=idx % 6, sticky="w", padx=4, pady=2)
+
+    def _search_customers(self) -> None:
+        effects = _parse_enum_list(self.customer_effects.get(), Effects, "effect_name")
+        selected_story_lines = [line for line, var in self.customer_story_vars.items() if var.get()]
+        results = load_customer_requests(
+            db_path=Path(self.db_path.get()),
+            text_query=self.customer_text.get().strip() or None,
+            effects=effects,
+            carma_filter=self.customer_carma.get(),
+            story_lines=selected_story_lines,
+        )
+        self.customer_output.delete("1.0", tk.END)
+        self.customer_output.insert(tk.END, f"Matched {len(results)} customers.\n\n")
+        for row in results:
+            effects_text = ", ".join(effect.effect_name for effect in row["effects"]) if row["effects"] else "None"
+            story = row["story_line"] if row["story_line"] else "Normal"
+            self.customer_output.insert(
+                tk.END,
+                f"[{row['source_idx']}] {row['name']} | carma={row['carma']} | story={story}\n"
+                f"  effects: {effects_text}\n"
+                f"  text: {row['request_text']}\n\n",
+            )
 
     def _sync_half_ingredient(self, *_args) -> None:
         raw = self.half_ingredient.get().strip()

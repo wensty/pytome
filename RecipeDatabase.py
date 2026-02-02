@@ -315,12 +315,12 @@ def load_recipes(db_path: pathlib.Path = DEFAULT_DB_PATH) -> list[Recipe]:
 
 
 def build_database_from_tome(db_path: pathlib.Path = DEFAULT_DB_PATH) -> int:
-    from ReadTome import read_tome
+    from ReadTome import read_tome_recipes
 
-    recipes = read_tome()
+    recipes = read_tome_recipes()
     return save_recipes(recipes, db_path=db_path)
 
 
 if __name__ == "__main__":
-    count = build_database_from_tome()
-    print(f"Saved {count} recipes into {DEFAULT_DB_PATH}")
+    _count = build_database_from_tome()
+    print(f"Saved {_count} recipes into {DEFAULT_DB_PATH}")

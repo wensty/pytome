@@ -1,9 +1,8 @@
 import argparse
 import sqlite3
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Type, TypeVar
 from enum import IntEnum
-from typing import Type, TypeVar
 
 from Effects import Effects, PotionBases
 from Ingredients import Ingredients, Salts
