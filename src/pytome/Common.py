@@ -5,9 +5,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ROOT_DATA_DIR = PROJECT_ROOT / "data"
 PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
 
-# Prefer package data for assets; prefer root data for database.
-ASSET_DATA_DIR = PACKAGE_DATA_DIR if PACKAGE_DATA_DIR.exists() else ROOT_DATA_DIR
-DB_DATA_DIR = ROOT_DATA_DIR if ROOT_DATA_DIR.exists() else PACKAGE_DATA_DIR
+# Always load assets from the package; databases live outside the package.
+ASSET_DATA_DIR = PACKAGE_DATA_DIR
+DB_DATA_DIR = ROOT_DATA_DIR
 
 EXAMPLE_EFFECT_ICON_ROWS = [
     166,

@@ -11,7 +11,15 @@ from PIL import Image, ImageTk
 from ..common import ASSET_DATA_DIR
 from ..effects import Effects, PotionBases
 from ..ingredients import Ingredients, Salts
-from ..recipe_database import add_recipe, delete_recipe_by_hash, get_recipe_hash, load_recipes, recipe_hash_exists, update_recipe_by_hash
+from ..recipe_database import (
+    add_recipe,
+    build_database_from_tome,
+    delete_recipe_by_hash,
+    get_recipe_hash,
+    load_recipes,
+    recipe_hash_exists,
+    update_recipe_by_hash,
+)
 from ..requirements import (
     Accepted,
     AddHalfIngredient,
@@ -217,6 +225,7 @@ class FilterTabMixin(GUIStateMixin):
 
         ttk.Entry(top, textvariable=self.db_path, width=60).grid(row=0, column=1, sticky=tk.W)
         ttk.Button(top, text="Browse", command=self._browse_db).grid(row=0, column=2, padx=5)
+        ttk.Button(top, text="Init from Snapshot", command=self._init_db_from_snapshot).grid(row=0, column=3, padx=5)
 
         form = ttk.Frame(parent, padding=10, style="Tome.TFrame")
         form.pack(fill=tk.X)
@@ -607,6 +616,23 @@ class FilterTabMixin(GUIStateMixin):
         path = filedialog.askopenfilename(filetypes=[("SQLite DB", "*.sqlite3"), ("All files", "*.*")])
         if path:
             self.db_path.set(path)
+
+    def _init_db_from_snapshot(self) -> None:
+        raw_path = self.db_path.get().strip()
+        if not raw_path:
+            messagebox.showerror("Init Database", "Database path is required.")
+            return
+        db_path = Path(raw_path)
+        if db_path.exists():
+            should_overwrite = messagebox.askyesno(
+                "Init Database",
+                "Database already exists.\nOverwrite it with the snapshot?",
+            )
+            if not should_overwrite:
+                return
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        count = build_database_from_tome(db_path=db_path)
+        messagebox.showinfo("Init Database", f"Loaded {count} recipes from snapshot.")
 
     def _add_required_tier(self) -> None:
         effect_name = self.tier_effect_select.get().strip()

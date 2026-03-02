@@ -80,7 +80,7 @@ class CustomerTabMixin(GUIStateMixin):
         story_lines = [""] + [line for line in story_lines if line]
         for idx, story_line in enumerate(story_lines):
             label = "Normal" if story_line == "" else story_line
-            var = tk.BooleanVar(value=(story_line == ""))
+            var = tk.BooleanVar(value=story_line == "")
             self.customer_story_vars[story_line] = var
             ttk.Checkbutton(container, text=label, variable=var).grid(row=idx // 6, column=idx % 6, sticky="w", padx=4, pady=2)
 
