@@ -169,9 +169,6 @@ def filter_recipes(
 
 
 class FilterTabMixin(GUIStateMixin):
-    root: tk.Tk
-    db_path: tk.StringVar
-
     def _init_filter_state(self) -> None:
         self.require_effects = tk.StringVar()
         self.effect_ranges = tk.StringVar()
