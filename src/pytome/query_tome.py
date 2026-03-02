@@ -4,12 +4,12 @@ from pathlib import Path
 from typing import Iterable, Type, TypeVar
 from enum import IntEnum
 
-from .Common import DB_DATA_DIR
-from .Effects import Effects, PotionBases
-from .Ingredients import Ingredients, Salts
-from .RecipeDatabase import load_recipes
-from .Recipes import Recipe
-from .Requirements import (
+from .common import DB_DATA_DIR
+from .effects import Effects, PotionBases
+from .ingredients import Ingredients, Salts
+from .recipe_database import load_recipes
+from .recipes import Recipe
+from .requirements import (
     Accepted,
     AddHalfIngredient,
     AddOneIngredient,

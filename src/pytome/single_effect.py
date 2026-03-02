@@ -1,4 +1,4 @@
-from .Recipes import Potion
+from .recipes import Potion
 
 WeakHealing = Potion.from_name(Healing=1)
 WeakPoison = Potion.from_name(Poison=1)

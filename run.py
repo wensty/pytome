@@ -8,6 +8,6 @@ if str(SRC_DIR) not in sys.path:
 
 
 if __name__ == "__main__":
-    from pytome.Gui import main
+    from pytome.gui import main
 
     main()

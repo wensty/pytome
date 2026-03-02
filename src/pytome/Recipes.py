@@ -3,9 +3,9 @@ import gzip
 from collections.abc import Sequence, Iterable
 from typing import Optional
 
-from .Common import ASSET_DATA_DIR
-from .Effects import NUMBER_OF_EFFECTS, Effects, PotionBases
-from .Ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS, Ingredients, Salts
+from .common import ASSET_DATA_DIR
+from .effects import NUMBER_OF_EFFECTS, Effects, PotionBases
+from .ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS, Ingredients, Salts
 
 
 with gzip.open(ASSET_DATA_DIR / "Compatibility.pkl.gz", "rb") as f:

@@ -1,9 +1,9 @@
 from enum import IntEnum
 from typing import Optional
 
-from .Recipes import Recipe
-from .Effects import Effects
-from .Requirements import Requirements
+from .recipes import Recipe
+from .effects import Effects
+from .requirements import Requirements
 
 
 class Difficulty(IntEnum):
@@ -125,9 +125,9 @@ def calculate_profit(
 
 
 if __name__ == "__main__":
-    from .Effects import PotionBases
-    from .Ingredients import NUMBER_OF_INGREDIENTS
-    from .Recipes import EffectTierList, IngredientNumList, SaltGrainList
+    from .effects import PotionBases
+    from .ingredients import NUMBER_OF_INGREDIENTS
+    from .recipes import EffectTierList, IngredientNumList, SaltGrainList
 
     _recipe = Recipe(
         base=PotionBases.Water,

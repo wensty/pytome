@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 
-from .Recipes import Compatibility, Recipe, PotionBases
-from .Effects import Effects
-from .Ingredients import Ingredients
+from .recipes import Compatibility, Recipe, PotionBases
+from .effects import Effects
+from .ingredients import Ingredients
 
 
 class Requirements(ABC):

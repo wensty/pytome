@@ -4,9 +4,9 @@ import pathlib
 import sqlite3
 from typing import Iterable
 
-from .Common import DB_DATA_DIR
-from .Effects import Effects
-from .ReadTome import read_tome_customers_requests, CustomerRequest
+from .common import DB_DATA_DIR
+from .effects import Effects
+from .read_tome import read_tome_customers_requests, CustomerRequest
 
 DEFAULT_CUSTOMER_DB_PATH = DB_DATA_DIR / "tome.sqlite3"
 

@@ -10,13 +10,13 @@ from typing import Type, TypeVar, cast
 
 from PIL import Image, ImageTk
 
-from .Common import ASSET_DATA_DIR, DB_DATA_DIR
-from .Effects import Effects, PotionBases
-from .Ingredients import Ingredients, Salts
-from .RecipeDatabase import add_recipe, delete_recipe_by_hash, get_recipe_hash, load_recipes, recipe_hash_exists, update_recipe_by_hash
-from .Profit import Difficulty, ProfitStat, calculate_profit
-from .CustomerDatabase import build_customer_database, load_customer_requests, load_story_lines
-from .Requirements import (
+from .common import ASSET_DATA_DIR, DB_DATA_DIR
+from .effects import Effects, PotionBases
+from .ingredients import Ingredients, Salts
+from .recipe_database import add_recipe, delete_recipe_by_hash, get_recipe_hash, load_recipes, recipe_hash_exists, update_recipe_by_hash
+from .profit import Difficulty, ProfitStat, calculate_profit
+from .customer_database import build_customer_database, load_customer_requests, load_story_lines
+from .requirements import (
     Accepted,
     AddHalfIngredient,
     AddOneIngredient,
@@ -31,7 +31,7 @@ from .Requirements import (
     WeakRecipe,
     count_extra_effects,
 )
-from .Recipes import EffectTierList, IngredientNumList, Recipe, SaltGrainList
+from .recipes import EffectTierList, IngredientNumList, Recipe, SaltGrainList
 
 
 def _parse_enum_list(raw: str, enum_cls, name_attr: str | None = None) -> list:
@@ -283,8 +283,8 @@ def _parse_range_value(raw: str) -> tuple[float | None, float | None]:
 
 
 def _collect_potion_defs() -> dict[str, EffectTierList]:
-    from . import Legendary
-    from . import SingleEffect
+    from . import legendary as Legendary
+    from . import single_effect as SingleEffect
 
     def _collect(module) -> dict[str, EffectTierList]:
         items: dict[str, EffectTierList] = {}
@@ -419,8 +419,6 @@ class FilterApp:
         self.root = root
         self.root.title("Tome Recipe Filter")
         self.root.geometry("1200x900")
-
-        # TODO: add a custom theme for the app.
 
         self.style = ttk.Style(root)
 

@@ -1,5 +1,5 @@
-from . import SingleEffect
-from .Recipes import Potion
+from . import single_effect as SingleEffect
+from .recipes import Potion
 
 VERSION = 2
 

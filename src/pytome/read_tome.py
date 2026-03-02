@@ -1,20 +1,19 @@
 import gzip
 import pickle
 import re
-import pathlib
 from typing import Union
 from hashlib import md5
 
 import openpyxl
 from openpyxl_image_loader import SheetImageLoader
 
-from .Common import ASSET_DATA_DIR
-from .Effects import NUMBER_OF_EFFECTS, Effects
-from .Recipes import Recipe, PotionBases
-from .Recipes import Ingredients, Salts, NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
-from .Recipes import Potion, IngredientNumList, SaltGrainList
-from . import Legendary
-from . import SingleEffect
+from .common import ASSET_DATA_DIR
+from .effects import NUMBER_OF_EFFECTS, Effects
+from .recipes import Recipe, PotionBases
+from .recipes import Ingredients, Salts, NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
+from .recipes import Potion, IngredientNumList, SaltGrainList
+from . import legendary as Legendary
+from . import single_effect as SingleEffect
 
 Numerical = Union[int, float]
 Correction = {"Stentch": "Stench", "Rejuvination": "Rejuvenation"}
@@ -221,7 +220,7 @@ def read_tome_customers_requests():
 
 
 def read_icon_md5():
-    from .Common import EXAMPLE_EFFECT_ICON_ROWS
+    from .common import EXAMPLE_EFFECT_ICON_ROWS
 
     tome_salty_skirt = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)["Salty Skirt"]
     image_loader = SheetImageLoader(tome_salty_skirt)
