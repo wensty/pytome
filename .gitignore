@@ -4,4 +4,4 @@ rawdata/*
 .vscode
 data/pics
 data/icons
-./_*.py
+_t.py
