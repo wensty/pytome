@@ -376,12 +376,15 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.icon_cache = icon_cache
         self.page_size = max(1, page_size)
         self.current_page = 1
+        self.highlighted_recipes: set[int] = set()
+        self.row_highlight_color = "#fff2cc"
 
         self.icon_size = 36
         self.effect_icon_size = 36
         self.salt_icon_size = 36
         self.header_icon_size = 36
         self.separator_width = 2
+        self.id_col_width = 50
         self.base_col_width = self.icon_size + 12
         self.effects_col_width = self.effect_icon_size * 5 + 60
         self.ingredient_cell_px = self.header_icon_size + 6
@@ -473,6 +476,7 @@ class RecipeIconWindow(QtWidgets.QDialog):
         body_scroll = self.right_table.horizontalScrollBar()
         if header_scroll is not None and body_scroll is not None:
             body_scroll.valueChanged.connect(header_scroll.setValue)
+            header_scroll.valueChanged.connect(body_scroll.setValue)
 
         if body_scroll is not None:
             body_scroll.valueChanged.connect(self.h_scroll.setValue)
@@ -499,14 +503,14 @@ class RecipeIconWindow(QtWidgets.QDialog):
         for table in (self.left_table, self.right_table):
             table.setRowCount(0)
 
-        self.left_table.setColumnWidth(0, 70)
+        self.left_table.setColumnWidth(0, self.id_col_width)
         self.left_table.setColumnWidth(1, self.base_col_width)
         self.left_table.setColumnWidth(2, self.effects_col_width)
-        self.left_table.setFixedWidth(70 + self.base_col_width + self.effects_col_width + 4)
-        self.left_header_table.setColumnWidth(0, 70)
+        self.left_table.setFixedWidth(self.id_col_width + self.base_col_width + self.effects_col_width + 4)
+        self.left_header_table.setColumnWidth(0, self.id_col_width)
         self.left_header_table.setColumnWidth(1, self.base_col_width)
         self.left_header_table.setColumnWidth(2, self.effects_col_width)
-        self.left_header_table.setFixedWidth(70 + self.base_col_width + self.effects_col_width + 4)
+        self.left_header_table.setFixedWidth(self.id_col_width + self.base_col_width + self.effects_col_width + 4)
 
         for idx in range(len(Ingredients)):
             self.right_table.setColumnWidth(idx, self.ingredient_cell_px)
@@ -748,6 +752,23 @@ class RecipeIconWindow(QtWidgets.QDialog):
         layout.addStretch(1)
         return cell
 
+    def _apply_row_highlight(self, row: int, enabled: bool) -> None:
+        color = QtGui.QColor(self.row_highlight_color) if enabled else QtGui.QColor()
+        for table in (self.left_table, self.right_table):
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
+                if item is not None:
+                    if enabled:
+                        item.setBackground(color)
+                    else:
+                        item.setBackground(QtGui.QBrush())
+                widget = table.cellWidget(row, col)
+                if widget is not None:
+                    if enabled:
+                        widget.setStyleSheet(f"background-color: {self.row_highlight_color};")
+                    else:
+                        widget.setStyleSheet("")
+
     def _rebuild_page(self, page: int) -> None:
         total = max(1, math.ceil(len(self.recipes) / self.page_size))
         page = max(1, min(page, total))
@@ -767,9 +788,13 @@ class RecipeIconWindow(QtWidgets.QDialog):
             self.left_table.insertRow(row)
             self.right_table.insertRow(row)
 
-            id_item = QtWidgets.QTableWidgetItem(str(idx))
-            id_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            self.left_table.setItem(row, 0, id_item)
+            toggle_btn = QtWidgets.QPushButton(str(idx))
+            toggle_btn.setCheckable(True)
+            toggle_btn.setChecked(idx in self.highlighted_recipes)
+            toggle_btn.setMinimumSize(24, 24)
+            toggle_btn.setStyleSheet("margin: 2px;")
+            toggle_btn.clicked.connect(lambda _checked, r=row, recipe_idx=idx: self._toggle_row_highlight(r, recipe_idx))
+            self.left_table.setCellWidget(row, 0, toggle_btn)
             self.left_table.setCellWidget(row, 1, self._build_base_widget(recipe))
             self.left_table.setCellWidget(row, 2, self._build_effects_widget(recipe))
 
@@ -787,6 +812,16 @@ class RecipeIconWindow(QtWidgets.QDialog):
                 self.right_table.setItem(row, col, item)
                 col += 1
             self.right_table.setCellWidget(row, col, self._build_action_widget(idx, recipe))
+            self._apply_row_highlight(row, idx in self.highlighted_recipes)
+
+    def _toggle_row_highlight(self, row: int, recipe_idx: int) -> None:
+        if recipe_idx in self.highlighted_recipes:
+            self.highlighted_recipes.remove(recipe_idx)
+            enabled = False
+        else:
+            self.highlighted_recipes.add(recipe_idx)
+            enabled = True
+        self._apply_row_highlight(row, enabled)
 
 
 class FilterTab(QtWidgets.QWidget):
