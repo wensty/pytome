@@ -1,3 +1,3 @@
-from .app import FilterApp, main
+from .app import main
 
-__all__ = ["FilterApp", "main"]
+__all__ = ["main"]
