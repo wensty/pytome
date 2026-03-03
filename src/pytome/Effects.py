@@ -98,6 +98,59 @@ _effect_names = [
     "Necromancy",
 ]
 
+_effect_types = [
+    "Buff",
+    "Harmful",
+    "Harmful",
+    "Harmful",
+    "Buff",
+    "Pheromone",
+    "Buff",
+    "Harmful",
+    "Buff",
+    "Buff",
+    "Buff",
+    "Pheromone",
+    "Buff",
+    "Universal",
+    "Harmful",
+    "Swamp",
+    "Swamp",
+    "Harmful",
+    "Universal",
+    "Pheromone",
+    "Harmful",
+    "Pheromone",
+    "Buff",
+    "Buff",
+    "Buff",
+    "Buff",
+    "Pheromone",
+    "Harmful",
+    "Buff",
+    "Buff",
+    "Harmful",
+    "Pheromone",
+    "Buff",
+    "Universal",
+    "Pheromone",
+    "Universal",
+    "Buff",
+    "Buff",
+    "Universal",
+    "Buff",
+    "Necro",
+]
+
+
+class EffectTypes(IntEnum):
+    Harmful = 0
+    Swamp = 1
+    Universal = 2
+    Pheromone = 3
+    Buff = 4
+    Necro = 5
+
 
 class PotionBases(IntEnum):
     Water = 0
@@ -164,6 +217,10 @@ class Effects(IntEnum):
     @property
     def effect_name(self) -> str:
         return _effect_names[self]
+
+    @property
+    def effect_type(self) -> EffectTypes:
+        return EffectTypes[_effect_types[self]]
 
     def exists_in_base(self, base: Union[int, PotionBases]) -> bool:
         if isinstance(base, int):
@@ -281,5 +338,5 @@ base_effects: dict[PotionBases, dict[Effects, EffectPosition]] = {
 if __name__ == "__main__":
     print(Effects.AcidProtection.base_price)
     print(Effects.Rage.base_price)
-    print(Effects.Curse.base_price)
+    print(Effects.AntiMagic.effect_type.name)
     print(Effects.Healing.dull_reachable_tier(PotionBases.Oil))

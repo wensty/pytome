@@ -10,7 +10,7 @@ from .profit_tab import ProfitTabMixin
 class FilterApp(FilterTabMixin, ProfitTabMixin, CustomerTabMixin):
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Tome Recipe Filter")
+        self.root.title("Potion Craft - Alchemist's Tome")
         self.root.geometry("1200x900")
 
         self.style = ttk.Style(root)

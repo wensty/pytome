@@ -1,6 +1,10 @@
 # pyTome
 
-An alchemy recipe and customer request query app for Potion Craft, built with Python and SQLite.
+This is a python tome for Potion Craft. Currently support:
+
+- recipe filtering.
+- Profit calculating.
+- customer browsing.
 
 ## Install
 
