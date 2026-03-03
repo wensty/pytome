@@ -135,6 +135,18 @@ _salt_names = [
 # TODO: _ingredientGrowPosition
 
 
+class IngredientElement(IntEnum):
+    Air = 0
+    Magic = 1
+    Water = 2
+    Life = 3
+    Earth = 4
+    Death = 5
+    Fire = 6
+    Explosion = 7
+    Universal = 8
+
+
 class Ingredients(IntEnum):
     Windbloom = 0
     Featherbloom = 1
@@ -205,6 +217,10 @@ class Ingredients(IntEnum):
     def ingredient_name(self) -> str:
         return _ingredient_names[self]
 
+    @property
+    def ingredient_element(self) -> IngredientElement:
+        return IngredientElement(self // 7)
+
 
 class Salts(IntEnum):
 
@@ -232,80 +248,9 @@ class Salts(IntEnum):
     Grotto: 6
 """
 
-# ingredientProperties = [
-#     IngredientsProperties("Windbloom", 38.8, None),
-#     IngredientsProperties("Featherbloom", 83.2, None),
-#     IngredientsProperties("Foggy Parasol", 88.8, None),
-#     IngredientsProperties("Fluffbloom", 99.6, None),
-#     IngredientsProperties("Whirlweed", 104, None),
-#     IngredientsProperties("Phantom Skirt", 144, None),
-#     IngredientsProperties("Cloud Crystal", 443.2, None),
-#     IngredientsProperties("Witch Mushroom", 42.4, None),
-#     IngredientsProperties("Thunder Thistle", 70, None),
-#     IngredientsProperties("Dream Beet", 73.6, None),
-#     IngredientsProperties("Shadow Chanterelle", 83.2, None),
-#     IngredientsProperties("Spellbloom", 132, None),
-#     IngredientsProperties("Mageberry", 152.4, None),
-#     IngredientsProperties("Arcane Crystal", 471.2, None),
-#     IngredientsProperties("Waterbloom", 32.8, None),
-#     IngredientsProperties("Icefruit", 46.8, None),
-#     IngredientsProperties("Tangleweed", 51.6, None),
-#     IngredientsProperties("Coldleaf", 77.6, None),
-#     IngredientsProperties("Kraken Mushroom", 78.8, None),
-#     IngredientsProperties("Watercap", 105.6, None),
-#     IngredientsProperties("Frost Sapphire", 375.2, None),
-#     IngredientsProperties("Lifeleaf", 24, None),
-#     IngredientsProperties("Goodberry", 36, None),
-#     IngredientsProperties("Druids Rosemary", 50.4, None),
-#     IngredientsProperties("Moss Shroom", 52.4, None),
-#     IngredientsProperties("Healers Heather", 77.2, None),
-#     IngredientsProperties("Evergreen Fern", 86.4, None),
-#     IngredientsProperties("Life Crystal", 269.2, None),
-#     IngredientsProperties("Terraria", 26.8, None),
-#     IngredientsProperties("Dryad's Saddle", 33.6, None),
-#     IngredientsProperties("Poopshroom", 36, None),
-#     IngredientsProperties("Weirdshroom", 46, None),
-#     IngredientsProperties("Goldthorn", 76.8, None),
-#     IngredientsProperties("Mudshroom", 86.4, None),
-#     IngredientsProperties("Earth Pyrite", 307.2, None),
-#     IngredientsProperties("Stink Mushroom", 30, None),
-#     IngredientsProperties("Goblin Shroom", 42, None),
-#     IngredientsProperties("Marshroom", 52.4, None),
-#     IngredientsProperties("Hairy Banana", 62.4, None),
-#     IngredientsProperties("Thornstick", 72.8, None),
-#     IngredientsProperties("Grave Truffle", 126, None),
-#     IngredientsProperties("Plague Stibnite", 336.8, None),
-#     IngredientsProperties("Firebell", 32.8, None),
-#     IngredientsProperties("Sulphur Shelf", 46.8, None),
-#     IngredientsProperties("Lavaroot", 57.6, None),
-#     IngredientsProperties("Flameweed", 70.4, None),
-#     IngredientsProperties("Magma Morel", 106.4, None),
-#     IngredientsProperties("Dragon Pepper", 116.8, None),
-#     IngredientsProperties("Fire Citrine", 404, None),
-#     IngredientsProperties("Mad Mushroom", 42.4, None),
-#     IngredientsProperties("Bloodthorn", 65.2, None),
-#     IngredientsProperties("Terror Bud", 73.6, None),
-#     IngredientsProperties("Grasping Root", 75.6, None),
-#     IngredientsProperties("Boombloom", 83.2, None),
-#     IngredientsProperties("Lust Mushroom", 113.2, None),
-#     IngredientsProperties("Blood Ruby", 375.2, None),
-#     IngredientsProperties("Rainbow Cap", 443.2, None),
-#     IngredientsProperties("Fable Bismuth", 1438.4, None),
-# ]
-
-# # salt prices cached from tome at 5/6/2025
-# PresumedSaltIngredientPrice: list[float] = [
-#     1 / 2145.6,
-#     1 / 966.6,
-#     1 / 1248.2,
-#     1 / 189.0,
-#     1 / 97.5,
-# ]
-# PresumedSaltCostPrice: list[float] = [0.09, 0.23, 0.18, 1.24, 2.87]
-
 
 if __name__ == "__main__":
     # print([1, 2, 3, 4][Ingredients.Windbloom + 2])
     # print(Ingredients.fromIndex(0))
     print(Ingredients(2).ingredient_name)
-    print(Ingredients["Windbloom"].ingredient_name)
+    print(Ingredients["Windbloom"].ingredient_element.name)
