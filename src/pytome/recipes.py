@@ -1,4 +1,6 @@
 from collections.abc import Sequence, Iterable
+from enum import IntEnum
+from dataclasses import dataclass
 from typing import Optional
 
 from .effects import NUMBER_OF_EFFECTS, Effects, PotionBases, Compatibility
@@ -128,6 +130,28 @@ class Recipe:
             if _this_effect_tier > 0:
                 _base_price += _tier_mult[_this_effect_tier] * effect.base_price
         return _base_price
+
+
+class CommentType(IntEnum):
+    Other = 0
+    Plotter = 1
+    Note = 2
+    NoteComment = 3
+    NoteLink = 4
+    VoidSalt = 11
+    MoonSalt = 12
+    SunSalt = 13
+    LifeSalt = 14
+    PhiloSalt = 15
+    Ingredient = 16
+
+
+@dataclass
+class Comment:
+    target: Recipe
+    type: CommentType = CommentType.Other
+    author: str = "Anonymous"
+    text: str = ""
 
 
 def test():

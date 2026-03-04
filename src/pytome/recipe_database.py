@@ -3,14 +3,22 @@ from __future__ import annotations
 import hashlib
 import pathlib
 import sqlite3
+from dataclasses import dataclass
 from typing import Iterable
 
 from .common import DB_DATA_DIR
 from .effects import NUMBER_OF_EFFECTS, PotionBases
 from .ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
-from .recipes import IngredientNumList, Potion, Recipe, SaltGrainList
+from .recipes import Comment, CommentType, IngredientNumList, Potion, Recipe, SaltGrainList
 
 DEFAULT_DB_PATH = DB_DATA_DIR / "tome.sqlite3"
+
+
+@dataclass(frozen=True)
+class RecipeCommentRecord:
+    comment_type: CommentType
+    author: str
+    text: str
 
 
 def _format_hash_number(value: float | int) -> str:
@@ -89,9 +97,22 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recipe_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recipe_id INTEGER NOT NULL,
+            comment_type INTEGER NOT NULL,
+            author TEXT NOT NULL DEFAULT "Anonymous",
+            content TEXT NOT NULL DEFAULT "",
+            FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+        )
+        """
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipes_base ON recipes(base)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipe_effects_effect ON recipe_effects(effect_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_ingredient ON recipe_ingredients(ingredient_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_recipe_comments_recipe ON recipe_comments(recipe_id)")
 
 
 def initialize_database(db_path: pathlib.Path = DEFAULT_DB_PATH) -> None:
@@ -100,9 +121,14 @@ def initialize_database(db_path: pathlib.Path = DEFAULT_DB_PATH) -> None:
         _ensure_schema(conn)
 
 
-def save_recipes(recipes: Iterable[Recipe], db_path: pathlib.Path = DEFAULT_DB_PATH) -> int:
+def save_recipes(
+    recipes: Iterable[Recipe],
+    comments: Iterable[Comment] | None = None,
+    db_path: pathlib.Path = DEFAULT_DB_PATH,
+) -> int:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     saved_count = 0
+    recipe_id_by_hash: dict[str, int] = {}
     with sqlite3.connect(db_path) as conn:
         _ensure_schema(conn)
         for recipe in recipes:
@@ -129,6 +155,7 @@ def save_recipes(recipes: Iterable[Recipe], db_path: pathlib.Path = DEFAULT_DB_P
                 "SELECT id FROM recipes WHERE recipe_hash = ?",
                 (recipe_hash,),
             ).fetchone()[0]
+            recipe_id_by_hash[recipe_hash] = int(recipe_id)
 
             conn.execute("DELETE FROM recipe_effects WHERE recipe_id = ?", (recipe_id,))
             conn.execute("DELETE FROM recipe_ingredients WHERE recipe_id = ?", (recipe_id,))
@@ -156,6 +183,27 @@ def save_recipes(recipes: Iterable[Recipe], db_path: pathlib.Path = DEFAULT_DB_P
                 ((recipe_id, salt_id, float(grains)) for salt_id, grains in enumerate(recipe.salt_grain_list)),
             )
             saved_count += 1
+        if comments is not None:
+            touched_recipe_ids = set(recipe_id_by_hash.values())
+            for recipe_id in touched_recipe_ids:
+                conn.execute("DELETE FROM recipe_comments WHERE recipe_id = ?", (recipe_id,))
+            for comment in comments:
+                comment_recipe_hash = _recipe_hash(comment.target)
+                comment_recipe_id = recipe_id_by_hash.get(comment_recipe_hash)
+                if comment_recipe_id is None:
+                    continue
+                conn.execute(
+                    """
+                    INSERT INTO recipe_comments (recipe_id, comment_type, author, content)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        comment_recipe_id,
+                        int(comment.type),
+                        str(comment.author or "Anonymous"),
+                        str(comment.text or ""),
+                    ),
+                )
     return saved_count
 
 
@@ -313,11 +361,65 @@ def load_recipes(db_path: pathlib.Path = DEFAULT_DB_PATH) -> list[Recipe]:
     return recipes
 
 
+def load_recipe_comments(db_path: pathlib.Path = DEFAULT_DB_PATH) -> dict[str, list[RecipeCommentRecord]]:
+    comments_by_hash: dict[str, list[RecipeCommentRecord]] = {}
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT r.recipe_hash, rc.comment_type, rc.author, rc.content
+            FROM recipe_comments rc
+            JOIN recipes r ON r.id = rc.recipe_id
+            ORDER BY rc.id
+            """
+        ).fetchall()
+        for row in rows:
+            recipe_hash = str(row["recipe_hash"])
+            comment_type_id = int(row["comment_type"])
+            comment_type = CommentType(comment_type_id) if comment_type_id in CommentType._value2member_map_ else CommentType.Other
+            comments_by_hash.setdefault(recipe_hash, []).append(
+                RecipeCommentRecord(
+                    comment_type=comment_type,
+                    author=str(row["author"] or "Anonymous"),
+                    text=str(row["content"] or ""),
+                )
+            )
+    return comments_by_hash
+
+
+def replace_recipe_comments_by_hash(
+    recipe_hash: str,
+    comments: Iterable[RecipeCommentRecord],
+    db_path: pathlib.Path = DEFAULT_DB_PATH,
+) -> None:
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        row = conn.execute("SELECT id FROM recipes WHERE recipe_hash = ?", (recipe_hash,)).fetchone()
+        if not row:
+            raise ValueError("Recipe hash not found.")
+        recipe_id = int(row[0])
+        conn.execute("DELETE FROM recipe_comments WHERE recipe_id = ?", (recipe_id,))
+        for comment in comments:
+            conn.execute(
+                """
+                INSERT INTO recipe_comments (recipe_id, comment_type, author, content)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    recipe_id,
+                    int(comment.comment_type),
+                    str(comment.author or "Anonymous"),
+                    str(comment.text or ""),
+                ),
+            )
+
+
 def build_database_from_tome(db_path: pathlib.Path = DEFAULT_DB_PATH) -> int:
     from .read_tome_recipes import read_tome_recipes
 
-    recipes = read_tome_recipes()
-    return save_recipes(recipes, db_path=db_path)
+    recipes, comments = read_tome_recipes()
+    return save_recipes(recipes, comments=comments, db_path=db_path)
 
 
 if __name__ == "__main__":

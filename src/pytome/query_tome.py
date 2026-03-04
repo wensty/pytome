@@ -7,8 +7,8 @@ from enum import IntEnum
 from .common import DB_DATA_DIR
 from .effects import Effects, PotionBases
 from .ingredients import Ingredients, Salts
-from .recipe_database import load_recipes
-from .recipes import Recipe
+from .recipe_database import get_recipe_hash, load_recipe_comments, load_recipes
+from .recipes import Recipe, CommentType
 from .requirements import (
     Accepted,
     AddHalfIngredient,
@@ -143,7 +143,7 @@ def _format_nonzero(values: Iterable[tuple[str, float | int]]) -> str:
     return ", ".join(parts) if parts else "None"
 
 
-def _print_recipe(recipe: Recipe, index: int) -> None:
+def _print_recipe(recipe: Recipe, index: int, comments: list[tuple[CommentType, str, str]] | None = None) -> None:
     effects = _format_nonzero((Effects(i).name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0)
     ingredients = _format_nonzero((Ingredients(i).ingredient_name, amount) for i, amount in enumerate(recipe.ingredient_num_list) if amount > 0)
     salts = _format_nonzero((Salts(i).name, grains) for i, grains in enumerate(recipe.salt_grain_list) if grains > 0)
@@ -155,6 +155,12 @@ def _print_recipe(recipe: Recipe, index: int) -> None:
         print(f"  plotter: {recipe.plotter_link}")
     if recipe.discord_link:
         print(f"  discord: {recipe.discord_link}")
+    if comments:
+        print("  comments:")
+        for comment_type, author, content in comments:
+            print(f"    - [{comment_type.name}] {author}: {content}")
+    else:
+        print("  comments: None")
 
 
 def run_filters(
@@ -182,6 +188,7 @@ def run_filters(
     show: int,
 ) -> None:
     recipes = load_recipes(Path(db_path))
+    comments_by_hash = load_recipe_comments(Path(db_path))
     filtered: list[Recipe] = []
     accepted_req = Accepted(required_effects, exact_mode) if required_effects else None
     weak_req = WeakRecipe(required_effects, exact_mode) if require_weak and required_effects else None
@@ -269,7 +276,12 @@ def run_filters(
     print(f"Matched {len(filtered)} recipes.")
     if show > 0:
         for index, recipe in enumerate(filtered[:show]):
-            _print_recipe(recipe, index)
+            recipe_hash = get_recipe_hash(recipe)
+            comments = [
+                (record.comment_type, record.author, record.text)
+                for record in comments_by_hash.get(recipe_hash, [])
+            ]
+            _print_recipe(recipe, index, comments=comments)
 
 
 def main() -> None:

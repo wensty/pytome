@@ -12,10 +12,14 @@ from ..recipe_database import (
     build_database_from_tome,
     delete_recipe_by_hash,
     get_recipe_hash,
+    load_recipe_comments,
     load_recipes,
+    RecipeCommentRecord,
+    replace_recipe_comments_by_hash,
     recipe_hash_exists,
     update_recipe_by_hash,
 )
+from ..recipes import CommentType
 from ..requirements import (
     Accepted,
     AddHalfIngredient,
@@ -367,7 +371,15 @@ class RecipeEditorDialog(QtWidgets.QDialog):
 
 
 class RecipeIconWindow(QtWidgets.QDialog):
-    def __init__(self, parent: QtWidgets.QWidget, app, recipes: list[Recipe], icon_cache: IconCache, page_size: int) -> None:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget,
+        app,
+        recipes: list[Recipe],
+        icon_cache: IconCache,
+        page_size: int,
+        comments_by_hash: dict[str, list[RecipeCommentRecord]] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Recipe Icon View")
         self.resize(1600, 1200)
@@ -378,6 +390,7 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.current_page = 1
         self.highlighted_recipes: set[int] = set()
         self.row_highlight_color = "#fff2cc"
+        self.comments_by_hash = comments_by_hash or {}
 
         self.icon_size = 36
         self.effect_icon_size = 36
@@ -387,12 +400,13 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.id_col_width = 50
         self.base_col_width = self.icon_size + 12
         self.effects_col_width = self.effect_icon_size * 5 + 60
+        self.comment_col_width = 160
         self.ingredient_cell_px = self.header_icon_size + 6
         self.ingredients_col_width = self.ingredient_cell_px * len(Ingredients)
         self.salt_cell_px = max(self.header_icon_size + 6, 60)
         self.salts_col_width = self.salt_cell_px * len(Salts)
-        self.links_col_width = 150
-        self.actions_col_width = 225
+        self.links_col_width = 180
+        self.actions_col_width = 190
         self.row_height = max(self.effect_icon_size, self.salt_icon_size, self.icon_size) + 12
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -489,8 +503,8 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.v_scroll.valueChanged.connect(lambda value: right_scroll.setValue(value) if right_scroll is not None else None)
 
     def _configure_tables(self) -> None:
-        self.left_header_table.setColumnCount(3)
-        self.left_table.setColumnCount(3)
+        self.left_header_table.setColumnCount(4)
+        self.left_table.setColumnCount(4)
         self.right_header_table.setColumnCount(len(Ingredients) + len(Salts) + 1)
         self.right_table.setColumnCount(len(Ingredients) + len(Salts) + 1)
 
@@ -506,11 +520,13 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.left_table.setColumnWidth(0, self.id_col_width)
         self.left_table.setColumnWidth(1, self.base_col_width)
         self.left_table.setColumnWidth(2, self.effects_col_width)
-        self.left_table.setFixedWidth(self.id_col_width + self.base_col_width + self.effects_col_width + 4)
+        self.left_table.setColumnWidth(3, self.comment_col_width)
+        self.left_table.setFixedWidth(self.id_col_width + self.base_col_width + self.effects_col_width + self.comment_col_width + 5)
         self.left_header_table.setColumnWidth(0, self.id_col_width)
         self.left_header_table.setColumnWidth(1, self.base_col_width)
         self.left_header_table.setColumnWidth(2, self.effects_col_width)
-        self.left_header_table.setFixedWidth(self.id_col_width + self.base_col_width + self.effects_col_width + 4)
+        self.left_header_table.setColumnWidth(3, self.comment_col_width)
+        self.left_header_table.setFixedWidth(self.id_col_width + self.base_col_width + self.effects_col_width + self.comment_col_width + 5)
 
         for idx in range(len(Ingredients)):
             self.right_table.setColumnWidth(idx, self.ingredient_cell_px)
@@ -560,6 +576,7 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.left_header_table.setCellWidget(0, 0, _header_label("ID"))
         self.left_header_table.setCellWidget(0, 1, _header_label("Base"))
         self.left_header_table.setCellWidget(0, 2, _header_label("Effects"))
+        self.left_header_table.setCellWidget(0, 3, _header_label("Comments"))
 
         col = 0
         for ingredient in Ingredients:
@@ -752,6 +769,153 @@ class RecipeIconWindow(QtWidgets.QDialog):
         layout.addStretch(1)
         return cell
 
+    def _show_comments(self, recipe: Recipe) -> None:
+        recipe_hash = get_recipe_hash(recipe)
+        records = self.comments_by_hash.get(recipe_hash, [])
+        if not records:
+            QtWidgets.QMessageBox.information(self, "Comments", "No comments for this recipe.")
+            return
+        lines = [f"[{record.comment_type.name}] {record.author}: {record.text}" for record in records]
+        QtWidgets.QMessageBox.information(self, "Comments", "\n\n".join(lines))
+
+    def _manage_comments(self, recipe: Recipe) -> None:
+        recipe_hash = get_recipe_hash(recipe)
+        records = list(self.comments_by_hash.get(recipe_hash, []))
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Manage Comments")
+        dialog.resize(760, 520)
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        list_widget = QtWidgets.QListWidget()
+        for record in records:
+            text = f"[{record.comment_type.name}] {record.author}: {record.text}"
+            list_widget.addItem(text)
+        layout.addWidget(list_widget)
+
+        form = QtWidgets.QGridLayout()
+        type_combo = QtWidgets.QComboBox()
+        type_combo.addItems([comment_type.name for comment_type in CommentType])
+        author_edit = QtWidgets.QLineEdit("Anonymous")
+        text_edit = QtWidgets.QPlainTextEdit()
+        form.addWidget(QtWidgets.QLabel("Type"), 0, 0)
+        form.addWidget(type_combo, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Author"), 1, 0)
+        form.addWidget(author_edit, 1, 1)
+        form.addWidget(QtWidgets.QLabel("Content"), 2, 0)
+        form.addWidget(text_edit, 2, 1)
+        layout.addLayout(form)
+
+        actions = QtWidgets.QHBoxLayout()
+        add_btn = QtWidgets.QPushButton("Add Comment")
+        update_btn = QtWidgets.QPushButton("Update Selected")
+        delete_btn = QtWidgets.QPushButton("Delete Selected")
+        save_btn = QtWidgets.QPushButton("Save")
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        actions.addWidget(add_btn)
+        actions.addWidget(update_btn)
+        actions.addWidget(delete_btn)
+        actions.addStretch(1)
+        actions.addWidget(save_btn)
+        actions.addWidget(cancel_btn)
+        layout.addLayout(actions)
+
+        def _refresh_list() -> None:
+            list_widget.clear()
+            for record in records:
+                list_widget.addItem(f"[{record.comment_type.name}] {record.author}: {record.text}")
+
+        def _add_comment() -> None:
+            content = text_edit.toPlainText().strip()
+            if not content:
+                QtWidgets.QMessageBox.warning(dialog, "Invalid comment", "Comment content is required.")
+                return
+            try:
+                comment_type = CommentType[type_combo.currentText().strip()]
+            except KeyError:
+                comment_type = CommentType.Other
+            author = author_edit.text().strip() or "Anonymous"
+            records.append(RecipeCommentRecord(comment_type=comment_type, author=author, text=content))
+            text_edit.clear()
+            _refresh_list()
+
+        def _update_comment() -> None:
+            row = list_widget.currentRow()
+            if row < 0 or row >= len(records):
+                QtWidgets.QMessageBox.warning(dialog, "No selection", "Please select one comment to update.")
+                return
+            content = text_edit.toPlainText().strip()
+            if not content:
+                QtWidgets.QMessageBox.warning(dialog, "Invalid comment", "Comment content is required.")
+                return
+            try:
+                comment_type = CommentType[type_combo.currentText().strip()]
+            except KeyError:
+                comment_type = CommentType.Other
+            author = author_edit.text().strip() or "Anonymous"
+            records[row] = RecipeCommentRecord(comment_type=comment_type, author=author, text=content)
+            _refresh_list()
+            list_widget.setCurrentRow(row)
+
+        def _delete_comment() -> None:
+            row = list_widget.currentRow()
+            if row < 0 or row >= len(records):
+                return
+            records.pop(row)
+            _refresh_list()
+
+        def _load_selected_comment() -> None:
+            row = list_widget.currentRow()
+            if row < 0 or row >= len(records):
+                return
+            record = records[row]
+            type_combo.setCurrentText(record.comment_type.name)
+            author_edit.setText(record.author)
+            text_edit.setPlainText(record.text)
+
+        def _save_comments() -> None:
+            try:
+                replace_recipe_comments_by_hash(recipe_hash, records, db_path=Path(self.app.db_path))
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(dialog, "Save Failed", str(exc))
+                return
+            self.comments_by_hash[recipe_hash] = list(records)
+            dialog.accept()
+
+        add_btn.clicked.connect(_add_comment)
+        update_btn.clicked.connect(_update_comment)
+        delete_btn.clicked.connect(_delete_comment)
+        save_btn.clicked.connect(_save_comments)
+        cancel_btn.clicked.connect(dialog.reject)
+        list_widget.itemSelectionChanged.connect(_load_selected_comment)
+
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self._rebuild_page(self.current_page)
+
+    def _build_comment_widget(self, recipe: Recipe) -> QtWidgets.QWidget:
+        recipe_hash = get_recipe_hash(recipe)
+        has_comments = bool(self.comments_by_hash.get(recipe_hash, []))
+
+        cell = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(cell)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(6)
+
+        view_btn = QtWidgets.QPushButton("Comments")
+        if has_comments:
+            view_btn.setStyleSheet("background-color: #c6f6c6;")
+        else:
+            view_btn.setStyleSheet("background-color: #ffd6d6;")
+        view_btn.clicked.connect(lambda: self._show_comments(recipe))
+
+        manage_btn = QtWidgets.QPushButton("Manage")
+        manage_btn.setStyleSheet("background-color: #fff2b2;")
+        manage_btn.clicked.connect(lambda: self._manage_comments(recipe))
+
+        layout.addWidget(view_btn)
+        layout.addWidget(manage_btn)
+        return cell
+
     def _apply_row_highlight(self, row: int, enabled: bool) -> None:
         color = QtGui.QColor(self.row_highlight_color) if enabled else QtGui.QColor()
         for table in (self.left_table, self.right_table):
@@ -797,6 +961,7 @@ class RecipeIconWindow(QtWidgets.QDialog):
             self.left_table.setCellWidget(row, 0, toggle_btn)
             self.left_table.setCellWidget(row, 1, self._build_base_widget(recipe))
             self.left_table.setCellWidget(row, 2, self._build_effects_widget(recipe))
+            self.left_table.setCellWidget(row, 3, self._build_comment_widget(recipe))
 
             col = 0
             for value in recipe.ingredient_num_list:
@@ -1337,7 +1502,8 @@ class FilterTab(QtWidgets.QWidget):
             page_size = int(self.page_size.text().strip() or "1")
         except ValueError:
             page_size = 1
-        window = RecipeIconWindow(self, self.app, recipes, self.icon_cache, page_size)
+        comments_by_hash = load_recipe_comments(Path(self.app.db_path))
+        window = RecipeIconWindow(self, self.app, recipes, self.icon_cache, page_size, comments_by_hash=comments_by_hash)
         window.exec()
 
     def _sync_db_path(self) -> None:
