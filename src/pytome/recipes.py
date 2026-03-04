@@ -88,20 +88,38 @@ class Recipe:
         effect_tier_list: EffectTierList,
         ingredient_num_list: IngredientNumList,
         salt_grain_list: SaltGrainList,
-        discord_link="",
-        plotter_link="",
         hidden=False,
     ) -> None:
         self.base = base
         self.effect_tier_list = effect_tier_list
         self.ingredient_num_list = ingredient_num_list
         self.salt_grain_list = salt_grain_list
-        self.discord_link = discord_link
-        self.plotter_link = plotter_link
         self.hidden = hidden
 
     def __repr__(self) -> str:
         return f"Recipe({self.base}, {self.effect_tier_list}, {self.ingredient_num_list}, {self.salt_grain_list})"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Recipe):
+            return False
+        return (
+            self.base == other.base
+            and tuple(self.effect_tier_list) == tuple(other.effect_tier_list)
+            and tuple(self.ingredient_num_list) == tuple(other.ingredient_num_list)
+            and tuple(self.salt_grain_list) == tuple(other.salt_grain_list)
+            and bool(self.hidden) == bool(other.hidden)
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                int(self.base),
+                tuple(self.effect_tier_list),
+                tuple(self.ingredient_num_list),
+                tuple(self.salt_grain_list),
+                int(bool(self.hidden)),
+            )
+        )
 
     # If the recipe contains effects with legal levels.
     @property
@@ -146,12 +164,24 @@ class CommentType(IntEnum):
     Ingredient = 16
 
 
+class LinkType(IntEnum):
+    Plotter = 1
+    Discord = 2
+
+
 @dataclass
 class Comment:
     target: Recipe
     type: CommentType = CommentType.Other
     author: str = "Anonymous"
     text: str = ""
+
+
+@dataclass
+class RecipeLink:
+    target: Recipe
+    type: LinkType
+    url: str
 
 
 def test():

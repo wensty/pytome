@@ -8,7 +8,7 @@ from openpyxl_image_loader import SheetImageLoader
 
 from .common import ASSET_DATA_DIR, effect_md5s
 from .effects import NUMBER_OF_EFFECTS
-from .recipes import Recipe, PotionBases, Comment, CommentType
+from .recipes import Recipe, PotionBases, Comment, CommentType, LinkType, RecipeLink
 from .recipes import Ingredients, Salts, NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
 from .recipes import Potion, IngredientNumList, SaltGrainList
 from . import legendary as Legendary
@@ -30,6 +30,7 @@ def read_tome_recipes():
     tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
     recipe_dump: set[Recipe] = set()
     comments: list[Comment] = []
+    links: list[RecipeLink] = []
 
     ## Reading RecipeDump page
     tome_recipe_dump = tome["Recipe Dump"]
@@ -49,6 +50,7 @@ def read_tome_recipes():
                 if key in Correction:
                     key = Correction[key]
                 potion = Legendary.__dict__[key]
+                # Only the explicit special marker denotes hidden recipes.
                 hidden = bool(groups[3])
             else:
                 single_effect_match = re.match(single_effect_pattern, recipe_title)
@@ -67,6 +69,7 @@ def read_tome_recipes():
                         continue
                     key = ["Weak", "", "Strong"][tier - 1] + key
                     potion = SingleEffect.__dict__[key]
+                    # Only the explicit special marker denotes hidden recipes.
                     hidden = bool(groups[2])
                 else:
                     # These recipes are temperarily removed because difficulty to makein real game.
@@ -90,7 +93,6 @@ def read_tome_recipes():
             plotter_link = str(plotter_link) if plotter_link else ""
             discord_link = tome_recipe_dump.cell(row, 17).hyperlink
             discord_link = discord_link.target or "" if discord_link else ""
-            hidden = hidden or not (bool(plotter_link) or bool(discord_link))
             if hidden:
                 print(f"Info: row {row} is a hidden recipe.")
             recipe = Recipe(
@@ -98,8 +100,6 @@ def read_tome_recipes():
                 potion,
                 ingredient_num_list,
                 salt_grain_list,
-                discord_link=discord_link,
-                plotter_link=plotter_link,
                 hidden=hidden,
             )
             if recipe in recipe_dump:
@@ -107,13 +107,17 @@ def read_tome_recipes():
             else:
                 recipe_dump.add(recipe)
                 recipe_dump_count += 1
-                # read comments. This page contains only plotter comments.
-                comment = tome_recipe_dump.cell(row, 16).comment
-                if comment is not None:
-                    comment_text = comment.text
-                    comment_author = comment.author if comment.author != "None" else "Anonymous"
-                    comment = Comment(recipe, CommentType.Plotter, comment_author, comment_text)
-                    comments.append(comment)
+            if plotter_link:
+                links.append(RecipeLink(recipe, LinkType.Plotter, plotter_link))
+            if discord_link:
+                links.append(RecipeLink(recipe, LinkType.Discord, discord_link))
+            # read comments. This page contains only plotter comments.
+            comment = tome_recipe_dump.cell(row, 16).comment
+            if comment is not None:
+                comment_text = comment.text
+                comment_author = comment.author if comment.author != "None" else "Anonymous"
+                comment = Comment(recipe, CommentType.Plotter, comment_author, comment_text)
+                comments.append(comment)
         else:
             # last recipe row.
             break
@@ -152,65 +156,68 @@ def read_tome_recipes():
             salt_grain_list = SaltGrainList(_salt_grains)
             plotter_link = tome_salty_skirt.cell(row, 7).hyperlink
             plotter_link = plotter_link.target or "" if plotter_link else ""
-            recipe = Recipe(PotionBases.Unknown, potion, ingredient_num_list, salt_grain_list, plotter_link=plotter_link)
+            recipe = Recipe(PotionBases.Unknown, potion, ingredient_num_list, salt_grain_list, hidden=False)
             if recipe not in recipe_dump:
                 recipe_dump.add(recipe)
                 salty_skirt_count += 1
-                # read comments.
-                comment_plotter = tome_salty_skirt.cell(row, 7).comment
-                if comment_plotter is not None:
-                    comment_text = comment_plotter.text
-                    comment_author = comment_plotter.author if comment_plotter.author else "Anonymous"
-                    comment = Comment(recipe, CommentType.Plotter, comment_author, comment_text)
-                    comments.append(comment)
+            if plotter_link:
+                links.append(RecipeLink(recipe, LinkType.Plotter, plotter_link))
+            # read comments.
+            comment_plotter = tome_salty_skirt.cell(row, 7).comment
+            if comment_plotter is not None:
+                comment_text = comment_plotter.text
+                comment_author = comment_plotter.author if comment_plotter.author else "Anonymous"
+                comment = Comment(recipe, CommentType.Plotter, comment_author, comment_text)
+                comments.append(comment)
 
-                recipe_note = tome_salty_skirt.cell(row, 8).value
-                if recipe_note:
-                    comment = Comment(recipe, CommentType.Note, "Anonymous", str(recipe_note))
-                    comments.append(comment)
+            recipe_note = tome_salty_skirt.cell(row, 8).value
+            if recipe_note:
+                comment = Comment(recipe, CommentType.Note, "Anonymous", str(recipe_note))
+                comments.append(comment)
 
-                recipe_note_comment = tome_salty_skirt.cell(row, 8).comment
-                if recipe_note_comment is not None:
-                    comment_text = recipe_note_comment.text
-                    comment_author = recipe_note_comment.author if recipe_note_comment.author != "None" else "Anonymous"
-                    comment = Comment(recipe, CommentType.NoteComment, comment_author, comment_text)
-                    comments.append(comment)
+            recipe_note_comment = tome_salty_skirt.cell(row, 8).comment
+            if recipe_note_comment is not None:
+                comment_text = recipe_note_comment.text
+                comment_author = recipe_note_comment.author if recipe_note_comment.author != "None" else "Anonymous"
+                comment = Comment(recipe, CommentType.NoteComment, comment_author, comment_text)
+                comments.append(comment)
 
-                recipe_note_link = tome_salty_skirt.cell(row, 8).hyperlink
-                if recipe_note_link:
-                    comment = Comment(recipe, CommentType.NoteLink, "Anonymous", recipe_note_link.target or "")
-                    comments.append(comment)
+            recipe_note_link = tome_salty_skirt.cell(row, 8).hyperlink
+            if recipe_note_link:
+                comment = Comment(recipe, CommentType.NoteLink, "Anonymous", recipe_note_link.target or "")
+                comments.append(comment)
 
-                recipe_moon_salt_comment = tome_salty_skirt.cell(row, 13).comment
-                if recipe_moon_salt_comment is not None:
-                    comment_text = recipe_moon_salt_comment.text
-                    comment_author = recipe_moon_salt_comment.author if recipe_moon_salt_comment.author != "None" else "Anonymous"
-                    comment = Comment(recipe, CommentType.MoonSalt, comment_author, comment_text)
-                    comments.append(comment)
+            recipe_moon_salt_comment = tome_salty_skirt.cell(row, 13).comment
+            if recipe_moon_salt_comment is not None:
+                comment_text = recipe_moon_salt_comment.text
+                comment_author = recipe_moon_salt_comment.author if recipe_moon_salt_comment.author != "None" else "Anonymous"
+                comment = Comment(recipe, CommentType.MoonSalt, comment_author, comment_text)
+                comments.append(comment)
 
-                recipe_sun_salt_comment = tome_salty_skirt.cell(row, 14).comment
-                if recipe_sun_salt_comment is not None:
-                    comment_text = recipe_sun_salt_comment.text
-                    comment_author = recipe_sun_salt_comment.author if recipe_sun_salt_comment.author != "None" else "Anonymous"
-                    comment = Comment(recipe, CommentType.SunSalt, comment_author, comment_text)
-                    comments.append(comment)
+            recipe_sun_salt_comment = tome_salty_skirt.cell(row, 14).comment
+            if recipe_sun_salt_comment is not None:
+                comment_text = recipe_sun_salt_comment.text
+                comment_author = recipe_sun_salt_comment.author if recipe_sun_salt_comment.author != "None" else "Anonymous"
+                comment = Comment(recipe, CommentType.SunSalt, comment_author, comment_text)
+                comments.append(comment)
 
-                recipe_other_comment = tome_salty_skirt.cell(row, 22).comment
-                if recipe_other_comment is not None:
-                    comment_text = recipe_other_comment.text
-                    comment_author = recipe_other_comment.author if recipe_other_comment.author != "None" else "Anonymous"
-                    comment = Comment(recipe, CommentType.Other, comment_author, comment_text)
-                    comments.append(comment)
+            recipe_other_comment = tome_salty_skirt.cell(row, 22).comment
+            if recipe_other_comment is not None:
+                comment_text = recipe_other_comment.text
+                comment_author = recipe_other_comment.author if recipe_other_comment.author != "None" else "Anonymous"
+                comment = Comment(recipe, CommentType.Other, comment_author, comment_text)
+                comments.append(comment)
         else:
             continue
     print(f"Completed reading {salty_skirt_count} additional recipes from salty skirt page.")
     print(f"Read {len(comments)} comments in total.")
-    return recipe_dump, comments
+    print(f"Read {len(links)} links in total.")
+    return recipe_dump, comments, links
 
 
 if __name__ == "__main__":
-    recipe_dump, comment_dump = read_tome_recipes()
-    print(f"Read {len(recipe_dump)} recipes and {len(comment_dump)} comments.")
+    recipe_dump, comment_dump, link_dump = read_tome_recipes()
+    print(f"Read {len(recipe_dump)} recipes, {len(comment_dump)} comments and {len(link_dump)} links.")
     # print(comment_dump)
     # with open("recipe_dump.pkl", "wb") as f:
     #     pickle.dump(recipe_dump, f)

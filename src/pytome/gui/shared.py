@@ -179,7 +179,6 @@ def _format_recipe(recipe) -> str:
         f"  effects: {effects}",
         f"  ingredients: {ingredients}",
         f"  salts: {salts}",
-        f"  links: plotter={recipe.plotter_link or 'None'} discord={recipe.discord_link or 'None'}",
     ]
     return "\n".join(lines)
 

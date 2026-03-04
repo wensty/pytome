@@ -12,14 +12,18 @@ from ..recipe_database import (
     build_database_from_tome,
     delete_recipe_by_hash,
     get_recipe_hash,
+    get_recipe_id_by_hash,
     load_recipe_comments,
+    load_recipe_links,
     load_recipes,
     RecipeCommentRecord,
+    RecipeLinkRecord,
     replace_recipe_comments_by_hash,
+    replace_recipe_links_by_hash,
     recipe_hash_exists,
     update_recipe_by_hash,
 )
-from ..recipes import CommentType
+from ..recipes import CommentType, LinkType
 from ..requirements import (
     Accepted,
     AddHalfIngredient,
@@ -62,6 +66,7 @@ def filter_recipes(
     ingredients_required: list[Ingredients],
     ingredients_forbidden: list[Ingredients],
     hidden_filter: bool | None,
+    show_no_links: bool,
     plotter_filter: bool | None,
     discord_filter: bool | None,
     exact_mode: bool,
@@ -78,6 +83,7 @@ def filter_recipes(
     extra_effects_min: int | None,
 ) -> list:
     recipes = load_recipes(Path(db_path))
+    links_by_hash = load_recipe_links(Path(db_path))
     filtered = []
     accepted_req = Accepted(required_effects, exact_mode) if required_effects else None
     weak_req = WeakRecipe(required_effects, exact_mode) if require_weak and required_effects else None
@@ -151,13 +157,20 @@ def filter_recipes(
             continue
         if half_ingredient is not None and not AddHalfIngredient(half_ingredient).is_satisfied(recipe):
             continue
-        if plotter_filter is True and not recipe.plotter_link:
+        recipe_hash = get_recipe_hash(recipe)
+        recipe_links = links_by_hash.get(recipe_hash, [])
+        has_plotter = any(link.link_type == LinkType.Plotter and link.url for link in recipe_links)
+        has_discord = any(link.link_type == LinkType.Discord and link.url for link in recipe_links)
+        has_any_link = has_plotter or has_discord
+        if not show_no_links and not has_any_link:
             continue
-        if plotter_filter is False and recipe.plotter_link:
+        if plotter_filter is True and not has_plotter:
             continue
-        if discord_filter is True and not recipe.discord_link:
+        if plotter_filter is False and has_plotter:
             continue
-        if discord_filter is False and recipe.discord_link:
+        if discord_filter is True and not has_discord:
+            continue
+        if discord_filter is False and has_discord:
             continue
         if extra_effects_min is not None and extra_effects:
             if count_extra_effects(recipe, extra_effects, exact=exact_mode) < extra_effects_min:
@@ -192,11 +205,20 @@ class GroupSeparatorDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class RecipeEditorDialog(QtWidgets.QDialog):
-    def __init__(self, parent: QtWidgets.QWidget, title: str, recipe: Recipe | None) -> None:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget,
+        title: str,
+        recipe: Recipe | None,
+        links: dict[LinkType, list[str]] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
         self._recipe = recipe
+        self._links = links or {}
+        self._plotter_links: list[str] = []
+        self._discord_links: list[str] = []
 
         layout = QtWidgets.QGridLayout(self)
 
@@ -222,9 +244,11 @@ class RecipeEditorDialog(QtWidgets.QDialog):
         self.salt_select = QtWidgets.QComboBox()
         self.salt_select.addItems(salt_names)
         self.salt_amount = QtWidgets.QLineEdit("1")
+        self.plotter_link_input = QtWidgets.QLineEdit()
+        self.discord_link_input = QtWidgets.QLineEdit()
+        self.plotter_links_list = QtWidgets.QListWidget()
+        self.discord_links_list = QtWidgets.QListWidget()
 
-        self.plotter_edit = QtWidgets.QLineEdit()
-        self.discord_edit = QtWidgets.QLineEdit()
 
         layout.addWidget(QtWidgets.QLabel("Base"), 0, 0)
         layout.addWidget(self.base_combo, 0, 1)
@@ -251,10 +275,29 @@ class RecipeEditorDialog(QtWidgets.QDialog):
         salt_btn = QtWidgets.QPushButton("Add")
         layout.addWidget(salt_btn, 3, 5)
 
-        layout.addWidget(QtWidgets.QLabel("Plotter Link"), 4, 0)
-        layout.addWidget(self.plotter_edit, 4, 1, 1, 2)
-        layout.addWidget(QtWidgets.QLabel("Discord Link"), 5, 0)
-        layout.addWidget(self.discord_edit, 5, 1, 1, 2)
+        plotter_box = QtWidgets.QGroupBox("Plotter Links")
+        plotter_layout = QtWidgets.QGridLayout(plotter_box)
+        plotter_layout.addWidget(self.plotter_links_list, 0, 0, 1, 4)
+        plotter_layout.addWidget(self.plotter_link_input, 1, 0, 1, 4)
+        plotter_add = QtWidgets.QPushButton("Add")
+        plotter_update = QtWidgets.QPushButton("Update")
+        plotter_delete = QtWidgets.QPushButton("Delete")
+        plotter_layout.addWidget(plotter_add, 2, 1)
+        plotter_layout.addWidget(plotter_update, 2, 2)
+        plotter_layout.addWidget(plotter_delete, 2, 3)
+        layout.addWidget(plotter_box, 4, 0, 1, 6)
+
+        discord_box = QtWidgets.QGroupBox("Discord Links")
+        discord_layout = QtWidgets.QGridLayout(discord_box)
+        discord_layout.addWidget(self.discord_links_list, 0, 0, 1, 4)
+        discord_layout.addWidget(self.discord_link_input, 1, 0, 1, 4)
+        discord_add = QtWidgets.QPushButton("Add")
+        discord_update = QtWidgets.QPushButton("Update")
+        discord_delete = QtWidgets.QPushButton("Delete")
+        discord_layout.addWidget(discord_add, 2, 1)
+        discord_layout.addWidget(discord_update, 2, 2)
+        discord_layout.addWidget(discord_delete, 2, 3)
+        layout.addWidget(discord_box, 5, 0, 1, 6)
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Save | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         layout.addWidget(buttons, 6, 0, 1, 6)
@@ -268,14 +311,89 @@ class RecipeEditorDialog(QtWidgets.QDialog):
             self.effects_edit.setText(_format_pairs(effects))
             self.ingredients_edit.setText(_format_pairs(ingredients))
             self.salts_edit.setText(_format_pairs(salts))
-            self.plotter_edit.setText(recipe.plotter_link)
-            self.discord_edit.setText(recipe.discord_link)
+        self._plotter_links = list(self._links.get(LinkType.Plotter, []))
+        self._discord_links = list(self._links.get(LinkType.Discord, []))
+        self._refresh_links_list(self.plotter_links_list, self._plotter_links)
+        self._refresh_links_list(self.discord_links_list, self._discord_links)
 
         effect_btn.clicked.connect(self._add_effect)
         ingredient_btn.clicked.connect(self._add_ingredient)
         salt_btn.clicked.connect(self._add_salt)
+        plotter_add.clicked.connect(lambda: self._add_link(self.plotter_link_input, self._plotter_links, self.plotter_links_list))
+        plotter_update.clicked.connect(lambda: self._update_selected_link(self.plotter_link_input, self._plotter_links, self.plotter_links_list))
+        plotter_delete.clicked.connect(lambda: self._delete_selected_link(self._plotter_links, self.plotter_links_list))
+        discord_add.clicked.connect(lambda: self._add_link(self.discord_link_input, self._discord_links, self.discord_links_list))
+        discord_update.clicked.connect(lambda: self._update_selected_link(self.discord_link_input, self._discord_links, self.discord_links_list))
+        discord_delete.clicked.connect(lambda: self._delete_selected_link(self._discord_links, self.discord_links_list))
+        self.plotter_links_list.itemSelectionChanged.connect(
+            lambda: self._load_selected_link(self.plotter_link_input, self._plotter_links, self.plotter_links_list)
+        )
+        self.discord_links_list.itemSelectionChanged.connect(
+            lambda: self._load_selected_link(self.discord_link_input, self._discord_links, self.discord_links_list)
+        )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+
+    @staticmethod
+    def _short_link(url: str, max_chars: int = 72) -> str:
+        text = url.strip()
+        if len(text) <= max_chars:
+            return text
+        head = max_chars // 2 - 2
+        tail = max_chars - head - 3
+        return f"{text[:head]}...{text[-tail:]}"
+
+    def _refresh_links_list(self, list_widget: QtWidgets.QListWidget, links: list[str]) -> None:
+        list_widget.clear()
+        for index, url in enumerate(links, start=1):
+            list_widget.addItem(f"[{index}] {self._short_link(url)}")
+
+    def _add_link(self, input_edit: QtWidgets.QLineEdit, links: list[str], list_widget: QtWidgets.QListWidget) -> None:
+        url = input_edit.text().strip()
+        if not url:
+            return
+        if url not in links:
+            links.append(url)
+            self._refresh_links_list(list_widget, links)
+            list_widget.setCurrentRow(len(links) - 1)
+        input_edit.clear()
+
+    def _update_selected_link(self, input_edit: QtWidgets.QLineEdit, links: list[str], list_widget: QtWidgets.QListWidget) -> None:
+        row = list_widget.currentRow()
+        if row < 0 or row >= len(links):
+            QtWidgets.QMessageBox.warning(self, "No selection", "Please select one link to update.")
+            return
+        url = input_edit.text().strip()
+        if not url:
+            QtWidgets.QMessageBox.warning(self, "Invalid link", "Link cannot be empty.")
+            return
+        existing_idx = links.index(url) if url in links else -1
+        if existing_idx >= 0 and existing_idx != row:
+            links.pop(row)
+            list_widget.clearSelection()
+            self._refresh_links_list(list_widget, links)
+            if links:
+                list_widget.setCurrentRow(min(existing_idx, len(links) - 1))
+            input_edit.clear()
+            return
+        links[row] = url
+        self._refresh_links_list(list_widget, links)
+        list_widget.setCurrentRow(row)
+
+    def _delete_selected_link(self, links: list[str], list_widget: QtWidgets.QListWidget) -> None:
+        row = list_widget.currentRow()
+        if row < 0 or row >= len(links):
+            return
+        links.pop(row)
+        self._refresh_links_list(list_widget, links)
+        if links:
+            list_widget.setCurrentRow(min(row, len(links) - 1))
+
+    def _load_selected_link(self, input_edit: QtWidgets.QLineEdit, links: list[str], list_widget: QtWidgets.QListWidget) -> None:
+        row = list_widget.currentRow()
+        if row < 0 or row >= len(links):
+            return
+        input_edit.setText(links[row])
 
     def _add_effect(self) -> None:
         name = self.effect_select.currentText().strip()
@@ -364,10 +482,25 @@ class RecipeEditorDialog(QtWidgets.QDialog):
             effect_tier_list=EffectTierList(effect_tier_list),
             ingredient_num_list=IngredientNumList(ingredient_num_list),
             salt_grain_list=SaltGrainList(salt_grain_list),
-            discord_link=self.discord_edit.text().strip(),
-            plotter_link=self.plotter_edit.text().strip(),
             hidden=self.hidden_check.isChecked(),
         )
+
+    def build_links(self) -> list[RecipeLinkRecord]:
+        records: list[RecipeLinkRecord] = []
+        for url in self._plotter_links:
+            records.append(RecipeLinkRecord(link_type=LinkType.Plotter, url=url))
+        for url in self._discord_links:
+            records.append(RecipeLinkRecord(link_type=LinkType.Discord, url=url))
+
+        seen: set[tuple[int, str]] = set()
+        deduped: list[RecipeLinkRecord] = []
+        for record in records:
+            key = (int(record.link_type), record.url)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(record)
+        return deduped
 
 
 class RecipeIconWindow(QtWidgets.QDialog):
@@ -379,6 +512,7 @@ class RecipeIconWindow(QtWidgets.QDialog):
         icon_cache: IconCache,
         page_size: int,
         comments_by_hash: dict[str, list[RecipeCommentRecord]] | None = None,
+        links_by_hash: dict[str, list[RecipeLinkRecord]] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Recipe Icon View")
@@ -391,6 +525,7 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.highlighted_recipes: set[int] = set()
         self.row_highlight_color = "#fff2cc"
         self.comments_by_hash = comments_by_hash or {}
+        self.links_by_hash = links_by_hash or {}
 
         self.icon_size = 36
         self.effect_icon_size = 36
@@ -596,13 +731,22 @@ class RecipeIconWindow(QtWidgets.QDialog):
             page = self.current_page
         self._rebuild_page(page)
 
+    def _links_for_recipe(self, recipe: Recipe) -> dict[LinkType, list[str]]:
+        recipe_hash = get_recipe_hash(recipe)
+        links = self.links_by_hash.get(recipe_hash, [])
+        return {
+            LinkType.Plotter: [record.url for record in links if record.link_type == LinkType.Plotter and record.url],
+            LinkType.Discord: [record.url for record in links if record.link_type == LinkType.Discord and record.url],
+        }
+
     def _add_recipe(self) -> None:
-        dialog = RecipeEditorDialog(self, "Add Recipe", None)
+        dialog = RecipeEditorDialog(self, "Add Recipe", None, links=None)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         new_recipe = dialog.build_recipe()
         if not new_recipe:
             return
+        new_links = dialog.build_links()
         db_path = Path(self.app.db_path)
         new_hash = get_recipe_hash(new_recipe)
         if recipe_hash_exists(new_hash, db_path=db_path):
@@ -616,34 +760,44 @@ class RecipeIconWindow(QtWidgets.QDialog):
                 return
             delete_recipe_by_hash(new_hash, db_path=db_path)
         add_recipe(new_recipe, db_path=db_path)
-        self.recipes.append(new_recipe)
+        replace_recipe_links_by_hash(new_hash, new_links, db_path=db_path)
+        self.recipes = load_recipes(db_path)
+        self.links_by_hash = load_recipe_links(db_path)
+        self.comments_by_hash = load_recipe_comments(db_path)
         self._rebuild_page(self.current_page)
 
     def _view_recipe(self, recipe: Recipe) -> None:
         QtWidgets.QMessageBox.information(self, "Recipe", _format_recipe(recipe))
 
     def _edit_recipe(self, recipe_idx: int, recipe: Recipe) -> None:
-        dialog = RecipeEditorDialog(self, f"Edit Recipe [{recipe_idx}]", recipe)
+        dialog = RecipeEditorDialog(self, f"Edit Recipe [{recipe_idx}]", recipe, links=self._links_for_recipe(recipe))
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         updated = dialog.build_recipe()
         if not updated:
             return
+        updated_links = dialog.build_links()
         db_path = Path(self.app.db_path)
         original_hash = get_recipe_hash(recipe)
-        updated_hash = get_recipe_hash(updated)
-        if updated_hash != original_hash and recipe_hash_exists(updated_hash, db_path=db_path):
-            should_delete = QtWidgets.QMessageBox.question(
+        original_id = get_recipe_id_by_hash(original_hash, db_path=db_path)
+        final_recipe_id = update_recipe_by_hash(original_hash, updated, db_path=db_path)
+        _ = final_recipe_id
+        final_hash = get_recipe_hash(updated)
+        merged = original_id is not None and final_recipe_id != original_id
+        if merged:
+            latest_links = load_recipe_links(db_path).get(final_hash, [])
+            merged_link_records: list[RecipeLinkRecord] = list(latest_links) + list(updated_links)
+            replace_recipe_links_by_hash(final_hash, merged_link_records, db_path=db_path)
+            QtWidgets.QMessageBox.information(
                 self,
-                "Duplicate Recipe",
-                "Recipe already exists after changes.\nDelete existing recipe and save changes?",
+                "Recipe Merged",
+                "Edited recipe was merged into an existing identical recipe. Metadata and comments were relinked.",
             )
-            if should_delete != QtWidgets.QMessageBox.StandardButton.Yes:
-                QtWidgets.QMessageBox.information(self, "Edit Recipe", "Changes discarded; recipe restored.")
-                return
-            delete_recipe_by_hash(updated_hash, db_path=db_path)
-        update_recipe_by_hash(original_hash, updated, db_path=db_path)
-        self.recipes[recipe_idx] = updated
+        else:
+            replace_recipe_links_by_hash(final_hash, updated_links, db_path=db_path)
+        self.recipes = load_recipes(db_path)
+        self.links_by_hash = load_recipe_links(db_path)
+        self.comments_by_hash = load_recipe_comments(db_path)
         self._rebuild_page(self.current_page)
 
     def _delete_recipe(self, recipe_idx: int, recipe: Recipe) -> None:
@@ -654,7 +808,10 @@ class RecipeIconWindow(QtWidgets.QDialog):
         if not deleted:
             QtWidgets.QMessageBox.warning(self, "Delete Recipe", "Recipe not found in database.")
             return
-        self.recipes.pop(recipe_idx)
+        db_path = Path(self.app.db_path)
+        self.recipes = load_recipes(db_path)
+        self.links_by_hash = load_recipe_links(db_path)
+        self.comments_by_hash = load_recipe_comments(db_path)
         self._rebuild_page(self.current_page)
 
     def _build_effects_widget(self, recipe: Recipe) -> QtWidgets.QWidget:
@@ -738,21 +895,53 @@ class RecipeIconWindow(QtWidgets.QDialog):
         layout.addWidget(icon_label)
         return cell
 
+    def _open_link(self, recipe: Recipe, link_type: LinkType) -> None:
+        recipe_hash = get_recipe_hash(recipe)
+        links = [record.url for record in self.links_by_hash.get(recipe_hash, []) if record.link_type == link_type and record.url]
+        if not links:
+            QtWidgets.QMessageBox.information(self, "Open Link", f"No {link_type.name.lower()} link for this recipe.")
+            return
+        if len(links) == 1:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(links[0]))
+            return
+        display_to_url = {
+            f"[{idx}] {RecipeEditorDialog._short_link(url)}": url
+            for idx, url in enumerate(links, start=1)
+        }
+        display_items = list(display_to_url.keys())
+        selected, ok = QtWidgets.QInputDialog.getItem(
+            self,
+            f"Open {link_type.name} Link",
+            "Choose link",
+            display_items,
+            0,
+            False,
+        )
+        if ok and selected:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(display_to_url[selected]))
+
     def _build_action_widget(self, recipe_idx: int, recipe: Recipe) -> QtWidgets.QWidget:
         cell = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(cell)
         layout.setContentsMargins(4, 0, 4, 0)
         layout.setSpacing(6)
+        recipe_hash = get_recipe_hash(recipe)
+        recipe_links = self.links_by_hash.get(recipe_hash, [])
+        plotter_count = sum(1 for record in recipe_links if record.link_type == LinkType.Plotter and record.url)
+        discord_count = sum(1 for record in recipe_links if record.link_type == LinkType.Discord and record.url)
 
-        def _link_button(text: str, url: str | None) -> QtWidgets.QPushButton:
+        def _link_button(text: str, link_count: int, handler) -> QtWidgets.QPushButton:
             button = QtWidgets.QPushButton(text)
             button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
-            if url:
-                button.setStyleSheet("background-color: #cfe8ff;")
-                button.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl(url)))
-            else:
+            if link_count <= 0:
                 button.setStyleSheet("background-color: #ffd6d6;")
                 button.setEnabled(False)
+            elif link_count == 1:
+                button.setStyleSheet("background-color: #cfe8ff;")
+                button.clicked.connect(handler)
+            else:
+                button.setStyleSheet("background-color: #ffe08a;")
+                button.clicked.connect(handler)
             return button
 
         def _action_button(text: str, handler) -> QtWidgets.QPushButton:
@@ -761,8 +950,8 @@ class RecipeIconWindow(QtWidgets.QDialog):
             button.clicked.connect(handler)
             return button
 
-        layout.addWidget(_link_button("plotter", recipe.plotter_link))
-        layout.addWidget(_link_button("discord", recipe.discord_link))
+        layout.addWidget(_link_button("plotter", plotter_count, lambda: self._open_link(recipe, LinkType.Plotter)))
+        layout.addWidget(_link_button("discord", discord_count, lambda: self._open_link(recipe, LinkType.Discord)))
         layout.addWidget(_action_button("View", lambda: self._view_recipe(recipe)))
         layout.addWidget(_action_button("Edit", lambda: self._edit_recipe(recipe_idx, recipe)))
         layout.addWidget(_action_button("Delete", lambda: self._delete_recipe(recipe_idx, recipe)))
@@ -1137,10 +1326,14 @@ class FilterTab(QtWidgets.QWidget):
         self.require_base_tier_check = QtWidgets.QCheckBox("Check Base+Dull Tier")
         self.hidden_filter = QtWidgets.QComboBox()
         self.hidden_filter.addItems(["Any", "Yes", "No"])
+        self.hidden_filter.setCurrentText("No")
+        self.show_no_links = QtWidgets.QCheckBox("Show No-Link")
+        self.show_no_links.setChecked(True)
         self.plotter_filter = QtWidgets.QComboBox()
         self.plotter_filter.addItems(["Any", "Yes", "No"])
         self.discord_filter = QtWidgets.QComboBox()
         self.discord_filter.addItems(["Any", "Yes", "No"])
+        self.require_base_tier_check.setChecked(True)
         checks.addWidget(self.exact_mode)
         checks.addWidget(self.require_weak)
         checks.addWidget(self.require_strong)
@@ -1149,6 +1342,7 @@ class FilterTab(QtWidgets.QWidget):
         checks.addWidget(self.require_base_tier_check)
         checks.addWidget(QtWidgets.QLabel("Hidden"))
         checks.addWidget(self.hidden_filter)
+        checks.addWidget(self.show_no_links)
         checks.addWidget(QtWidgets.QLabel("Plotter"))
         checks.addWidget(self.plotter_filter)
         checks.addWidget(QtWidgets.QLabel("Discord"))
@@ -1428,6 +1622,7 @@ class FilterTab(QtWidgets.QWidget):
                 ingredients_required=ingredients_required,
                 ingredients_forbidden=ingredients_forbidden,
                 hidden_filter=hidden_filter,
+                show_no_links=self.show_no_links.isChecked(),
                 plotter_filter=plotter_filter,
                 discord_filter=discord_filter,
                 exact_mode=self.exact_mode.isChecked(),
@@ -1470,11 +1665,16 @@ class FilterTab(QtWidgets.QWidget):
             return
         if path.lower().endswith(".csv"):
             import csv
+            links_by_hash = load_recipe_links(Path(self.app.db_path))
 
             with open(path, "w", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow(["base", "hidden", "effects", "ingredients", "salts", "plotter", "discord"])
+                writer.writerow(["base", "hidden", "effects", "ingredients", "salts", "plotter_links", "discord_links"])
                 for recipe in self.app.last_results:
+                    recipe_hash = get_recipe_hash(recipe)
+                    links = links_by_hash.get(recipe_hash, [])
+                    plotter_links = [link.url for link in links if link.link_type == LinkType.Plotter and link.url]
+                    discord_links = [link.url for link in links if link.link_type == LinkType.Discord and link.url]
                     effects = _format_nonzero([(Effects(i).name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0])
                     ingredients = _format_nonzero(
                         [(Ingredients(i).ingredient_name, amount) for i, amount in enumerate(recipe.ingredient_num_list) if amount > 0]
@@ -1487,8 +1687,8 @@ class FilterTab(QtWidgets.QWidget):
                             effects,
                             ingredients,
                             salts,
-                            recipe.plotter_link,
-                            recipe.discord_link,
+                            "; ".join(plotter_links),
+                            "; ".join(discord_links),
                         ]
                     )
         else:
@@ -1502,8 +1702,18 @@ class FilterTab(QtWidgets.QWidget):
             page_size = int(self.page_size.text().strip() or "1")
         except ValueError:
             page_size = 1
-        comments_by_hash = load_recipe_comments(Path(self.app.db_path))
-        window = RecipeIconWindow(self, self.app, recipes, self.icon_cache, page_size, comments_by_hash=comments_by_hash)
+        db_path = Path(self.app.db_path)
+        comments_by_hash = load_recipe_comments(db_path)
+        links_by_hash = load_recipe_links(db_path)
+        window = RecipeIconWindow(
+            self,
+            self.app,
+            recipes,
+            self.icon_cache,
+            page_size,
+            comments_by_hash=comments_by_hash,
+            links_by_hash=links_by_hash,
+        )
         window.exec()
 
     def _sync_db_path(self) -> None:

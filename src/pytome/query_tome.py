@@ -7,8 +7,8 @@ from enum import IntEnum
 from .common import DB_DATA_DIR
 from .effects import Effects, PotionBases
 from .ingredients import Ingredients, Salts
-from .recipe_database import get_recipe_hash, load_recipe_comments, load_recipes
-from .recipes import Recipe, CommentType
+from .recipe_database import get_recipe_hash, load_recipe_comments, load_recipe_links, load_recipes
+from .recipes import CommentType, LinkType, Recipe
 from .requirements import (
     Accepted,
     AddHalfIngredient,
@@ -151,10 +151,7 @@ def _print_recipe(recipe: Recipe, index: int, comments: list[tuple[CommentType, 
     print(f"  effects: {effects}")
     print(f"  ingredients: {ingredients}")
     print(f"  salts: {salts}")
-    if recipe.plotter_link:
-        print(f"  plotter: {recipe.plotter_link}")
-    if recipe.discord_link:
-        print(f"  discord: {recipe.discord_link}")
+    # Link printing is handled by grouped lists loaded from recipe_links table.
     if comments:
         print("  comments:")
         for comment_type, author, content in comments:
@@ -189,6 +186,7 @@ def run_filters(
 ) -> None:
     recipes = load_recipes(Path(db_path))
     comments_by_hash = load_recipe_comments(Path(db_path))
+    links_by_hash = load_recipe_links(Path(db_path))
     filtered: list[Recipe] = []
     accepted_req = Accepted(required_effects, exact_mode) if required_effects else None
     weak_req = WeakRecipe(required_effects, exact_mode) if require_weak and required_effects else None
@@ -260,13 +258,17 @@ def run_filters(
             continue
         if half_ingredient is not None and not AddHalfIngredient(half_ingredient).is_satisfied(recipe):
             continue
-        if plotter_filter is True and not recipe.plotter_link:
+        recipe_hash = get_recipe_hash(recipe)
+        links = links_by_hash.get(recipe_hash, [])
+        has_plotter = any(link.link_type == LinkType.Plotter and link.url for link in links)
+        has_discord = any(link.link_type == LinkType.Discord and link.url for link in links)
+        if plotter_filter is True and not has_plotter:
             continue
-        if plotter_filter is False and recipe.plotter_link:
+        if plotter_filter is False and has_plotter:
             continue
-        if discord_filter is True and not recipe.discord_link:
+        if discord_filter is True and not has_discord:
             continue
-        if discord_filter is False and recipe.discord_link:
+        if discord_filter is False and has_discord:
             continue
         if extra_effects_min is not None and extra_effects:
             if count_extra_effects(recipe, extra_effects, exact=exact_mode) < extra_effects_min:
@@ -281,7 +283,22 @@ def run_filters(
                 (record.comment_type, record.author, record.text)
                 for record in comments_by_hash.get(recipe_hash, [])
             ]
+            links = links_by_hash.get(recipe_hash, [])
             _print_recipe(recipe, index, comments=comments)
+            plotter_links = [link.url for link in links if link.link_type == LinkType.Plotter and link.url]
+            discord_links = [link.url for link in links if link.link_type == LinkType.Discord and link.url]
+            if plotter_links:
+                print(f"  plotter_links({len(plotter_links)}):")
+                for link in plotter_links:
+                    print(f"    - {link}")
+            else:
+                print("  plotter_links: None")
+            if discord_links:
+                print(f"  discord_links({len(discord_links)}):")
+                for link in discord_links:
+                    print(f"    - {link}")
+            else:
+                print("  discord_links: None")
 
 
 def main() -> None:
@@ -336,7 +353,7 @@ def main() -> None:
     filter_parser.add_argument("--lowlander", type=int, help="Max number of ingredients used.")
     filter_parser.add_argument("--dull", action="store_true", help="Require dull recipe (no salts).")
     filter_parser.add_argument("--valid", action="store_true", help="Require Recipe.is_valid.")
-    filter_parser.add_argument("--hidden", choices=["any", "yes", "no"], default="any", help="Filter by hidden status.")
+    filter_parser.add_argument("--hidden", choices=["any", "yes", "no"], default="no", help="Filter by hidden status.")
     filter_parser.add_argument("--plotter", choices=["any", "yes", "no"], default="any", help="Filter by plotter link.")
     filter_parser.add_argument("--discord", choices=["any", "yes", "no"], default="any", help="Filter by discord link.")
     filter_parser.add_argument(
@@ -344,6 +361,13 @@ def main() -> None:
         action="store_true",
         help="Check required effects reach tier 3 without salts on allowed bases.",
     )
+    filter_parser.add_argument(
+        "--no-check-base-dull-tier",
+        dest="check_base_dull_tier",
+        action="store_false",
+        help="Disable base+dull tier check.",
+    )
+    filter_parser.set_defaults(check_base_dull_tier=True)
     filter_parser.add_argument(
         "--extra-effects-min",
         type=int,

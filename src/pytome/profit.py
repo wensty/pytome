@@ -134,8 +134,6 @@ if __name__ == "__main__":
         effect_tier_list=EffectTierList.from_name(Curse=2, Rage=3),
         ingredient_num_list=IngredientNumList([0] * NUMBER_OF_INGREDIENTS),
         salt_grain_list=SaltGrainList([0, 0, 0, 0, 0]),
-        discord_link="",
-        plotter_link="",
         hidden=False,
     )
     _profit_stat = ProfitStat(

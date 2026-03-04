@@ -330,8 +330,6 @@ class ProfitTab(QtWidgets.QWidget):
             effect_tier_list=EffectTierList(effect_tier_list),
             ingredient_num_list=IngredientNumList(ingredient_num_list),
             salt_grain_list=SaltGrainList(salt_grain_list),
-            discord_link="",
-            plotter_link="",
             hidden=False,
         )
 
