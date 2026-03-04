@@ -1,4 +1,10 @@
 from pathlib import Path
+from hashlib import md5
+import gzip
+import pickle
+
+import openpyxl
+from openpyxl_image_loader import SheetImageLoader
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -159,3 +165,45 @@ EXAMPLE_INGREDIENT_ICON_COLS = [
 ]
 
 EXAMPLE_SALT_ICON_COLS = ["T", "V", "X", "Z", "AB"]
+
+
+ICON_MD5_PATH = ASSET_DATA_DIR / "iconMD5s.pkl.gz"
+
+
+def read_icon_md5() -> dict[str, int]:
+    tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
+    tome_salty_skirt = tome["Salty Skirt"]
+    tome_compatible_effects = tome["Compatible Effects (Groups)"]
+    image_loader_salty_skirt = SheetImageLoader(tome_salty_skirt)
+    image_loader_compatible_effects = SheetImageLoader(tome_compatible_effects)
+
+    icon_md5: dict[str, int] = {}
+
+    # load icon from Salty Skirt page.
+    for index, row in enumerate(EXAMPLE_EFFECT_ICON_ROWS_SALTY_SKIRT):
+        image = image_loader_salty_skirt.get(f"A{row}")
+        icon_md5[md5(pickle.dumps(image)).hexdigest()] = index
+
+    # load icon from Compatible Effects (Groups) page.
+    for index, row in enumerate(EXAMPLE_EFFECT_ICON_ROWS_COMPATIBILITY):
+        image = image_loader_compatible_effects.get(f"C{row}")
+        icon_md5[md5(pickle.dumps(image)).hexdigest()] = index
+
+    return icon_md5
+
+
+def update_icon_md5() -> dict[str, int]:
+    icon_md5 = read_icon_md5()
+    with gzip.open(ICON_MD5_PATH, "wb") as f:
+        pickle.dump(icon_md5, f)
+    return icon_md5
+
+
+def _load_effect_md5s() -> dict[str, int]:
+    if not ICON_MD5_PATH.exists():
+        return update_icon_md5()
+    with gzip.open(ICON_MD5_PATH, "rb") as f:
+        return pickle.load(f)
+
+
+effect_md5s = _load_effect_md5s()

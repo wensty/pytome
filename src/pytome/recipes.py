@@ -1,15 +1,8 @@
-import pickle
-import gzip
 from collections.abc import Sequence, Iterable
 from typing import Optional
 
-from .common import ASSET_DATA_DIR
-from .effects import NUMBER_OF_EFFECTS, Effects, PotionBases
+from .effects import NUMBER_OF_EFFECTS, Effects, PotionBases, Compatibility
 from .ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS, Ingredients, Salts
-
-
-with gzip.open(ASSET_DATA_DIR / "Compatibility.pkl.gz", "rb") as f:
-    Compatibility: list[list[int]] = pickle.load(f)
 
 
 class EffectTierList(Sequence[int]):

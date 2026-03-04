@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from PyQt6 import QtCore, QtGui, QtWidgets
+
 from ..effects import EffectTypes, Effects
-from ..recipes import Compatibility
+from ..effects import Compatibility
 from .icons import IconCache
 
 

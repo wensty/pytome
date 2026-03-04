@@ -1,5 +1,13 @@
 from enum import IntEnum
 from typing import Union
+from hashlib import md5
+import gzip
+import pickle
+
+import openpyxl
+from openpyxl_image_loader import SheetImageLoader
+
+from .common import ASSET_DATA_DIR, effect_md5s
 
 NUMBER_OF_EFFECTS = 41
 
@@ -141,6 +149,47 @@ _effect_types = [
     "Buff",
     "Necro",
 ]
+
+
+COMPATIBILITY_PATH = ASSET_DATA_DIR / "Compatibility.pkl.gz"
+
+
+def read_tome_effect_compatibilties() -> list[list[int]]:
+    tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
+    page = tome["Compatible Effects (Groups)"]
+    image_loader = SheetImageLoader(page)
+
+    effect_list: list[int] = []
+    for row in range(4, 45):
+        assert image_loader.image_in(f"C{row}")
+        effect_image = image_loader.get(f"C{row}")
+        effect_md5 = md5(pickle.dumps(effect_image)).hexdigest()
+        effect = effect_md5s[effect_md5]
+        effect_list.append(effect)
+
+    _compatibilitie_matrix: list[list[int]] = [
+        [0 for _ in range(NUMBER_OF_EFFECTS)] for _ in range(NUMBER_OF_EFFECTS)
+    ]
+    for i in range(NUMBER_OF_EFFECTS):
+        main_effect = effect_list[i]
+        for j in range(NUMBER_OF_EFFECTS):
+            secondary_effect = effect_list[j]
+            value = page.cell(i + 4, j + 4).value
+            _compatibilitie_matrix[main_effect][secondary_effect] = int(value) if isinstance(value, float) else -1
+
+    with gzip.open(COMPATIBILITY_PATH, "wb") as f:
+        pickle.dump(_compatibilitie_matrix, f)
+    return _compatibilitie_matrix
+
+
+def _load_compatibility() -> list[list[int]]:
+    if not COMPATIBILITY_PATH.exists():
+        return read_tome_effect_compatibilties()
+    with gzip.open(COMPATIBILITY_PATH, "rb") as f:
+        return pickle.load(f)
+
+
+Compatibility = _load_compatibility()
 
 
 class EffectTypes(IntEnum):

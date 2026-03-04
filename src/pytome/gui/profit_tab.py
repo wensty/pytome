@@ -19,7 +19,7 @@ from ..requirements import (
     WeakRecipe,
 )
 from ..recipes import EffectTierList, IngredientNumList, Recipe, SaltGrainList
-from .shared_qt import (
+from .shared import (
     _append_csv,
     _format_pairs,
     _parse_amounts,

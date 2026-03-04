@@ -6,7 +6,7 @@ from PyQt6 import QtWidgets
 
 from ..customer_database import build_customer_database, load_customer_requests, load_story_lines
 from ..effects import Effects
-from .shared_qt import _append_csv, _parse_enum_list
+from .shared import _append_csv, _parse_enum_list
 
 
 class CustomerTab(QtWidgets.QWidget):

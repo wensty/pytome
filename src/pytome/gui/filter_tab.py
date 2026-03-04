@@ -29,7 +29,7 @@ from ..requirements import (
 )
 from ..recipes import EffectTierList, IngredientNumList, Recipe, SaltGrainList
 from .icons import IconCache
-from .shared_qt import (
+from .shared import (
     _append_csv,
     _build_enum_lookup,
     _collect_potion_defs,

@@ -6,7 +6,7 @@ from typing import Iterable
 
 from .common import DB_DATA_DIR
 from .effects import Effects
-from .read_tome import read_tome_customers_requests, CustomerRequest
+from .read_tome_customers import read_tome_customers_requests, CustomerRequest
 
 DEFAULT_CUSTOMER_DB_PATH = DB_DATA_DIR / "tome.sqlite3"
 
