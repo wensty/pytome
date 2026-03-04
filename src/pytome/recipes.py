@@ -120,6 +120,7 @@ class Recipe:
 
     # calculate the base price of a recipe.
     def base_price(self, required_effects: Optional[list[Effects]] = None) -> float:
+
         # Provide none to calculate merchant base price (requesting all effects.)
         _tier_mult = [0, 0.4, 0.7, 1.0]
         _required_effects = required_effects if required_effects is not None else list(Effects)

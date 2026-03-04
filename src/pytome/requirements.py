@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from .recipes import Compatibility, Recipe, PotionBases
+from .recipes import Recipe, PotionBases, Compatibility
 from .effects import Effects
 from .ingredients import Ingredients
 

@@ -309,8 +309,6 @@ def load_recipes(db_path: pathlib.Path = DEFAULT_DB_PATH) -> list[Recipe]:
                 plotter_link=row["plotter_link"],
                 hidden=bool(row["hidden"]),
             )
-            # recipe.recipe_id = int(row["id"])
-            # recipe.recipe_hash = row["recipe_hash"]
             recipes.append(recipe)
     return recipes
 

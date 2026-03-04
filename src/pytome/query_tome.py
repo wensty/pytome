@@ -106,36 +106,36 @@ def _parse_ranges(raw: str | None, enum_cls: Type[EnumValue], name_attr: str | N
     return ranges
 
 
-def _parse_effect_tiers(raw: str | None) -> dict[Effects, int]:
-    if not raw:
-        return {}
-    lookup = {name.lower(): member for name, member in Effects.__members__.items()}
-    tiers: dict[Effects, int] = {}
-    for item in raw.split(","):
-        part = item.strip()
-        if not part:
-            continue
-        if ":" not in part:
-            raise ValueError("Effect tiers must be in Name:Tier format.")
-        name, tier_raw = part.split(":", 1)
-        key = name.strip().lower()
-        if key not in lookup:
-            raise ValueError(f"Unknown Effects name: {name}")
-        try:
-            tier = int(tier_raw.strip())
-        except ValueError as exc:
-            raise ValueError(f"Invalid tier value: {tier_raw}") from exc
-        tiers[lookup[key]] = tier
-    return tiers
+# def _parse_effect_tiers(raw: str | None) -> dict[Effects, int]:
+#     if not raw:
+#         return {}
+#     lookup = {name.lower(): member for name, member in Effects.__members__.items()}
+#     tiers: dict[Effects, int] = {}
+#     for item in raw.split(","):
+#         part = item.strip()
+#         if not part:
+#             continue
+#         if ":" not in part:
+#             raise ValueError("Effect tiers must be in Name:Tier format.")
+#         name, tier_raw = part.split(":", 1)
+#         key = name.strip().lower()
+#         if key not in lookup:
+#             raise ValueError(f"Unknown Effects name: {name}")
+#         try:
+#             tier = int(tier_raw.strip())
+#         except ValueError as exc:
+#             raise ValueError(f"Invalid tier value: {tier_raw}") from exc
+#         tiers[lookup[key]] = tier
+#     return tiers
 
 
-def _validate_exact_requirements(effect_tiers: dict[Effects, int]) -> None:
-    if not effect_tiers:
-        return
-    if any(tier < 0 or tier > 3 for tier in effect_tiers.values()):
-        raise ValueError("Exact requirements must have tiers in [0, 3].")
-    if sum(effect_tiers.values()) > 5:
-        raise ValueError("Exact requirements must have total tier sum <= 5.")
+# def _validate_exact_requirements(effect_tiers: dict[Effects, int]) -> None:
+#     if not effect_tiers:
+#         return
+#     if any(tier < 0 or tier > 3 for tier in effect_tiers.values()):
+#         raise ValueError("Exact requirements must have tiers in [0, 3].")
+#     if sum(effect_tiers.values()) > 5:
+#         raise ValueError("Exact requirements must have total tier sum <= 5.")
 
 
 def _format_nonzero(values: Iterable[tuple[str, float | int]]) -> str:

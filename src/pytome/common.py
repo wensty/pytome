@@ -9,7 +9,7 @@ PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
 ASSET_DATA_DIR = PACKAGE_DATA_DIR
 DB_DATA_DIR = ROOT_DATA_DIR
 
-EXAMPLE_EFFECT_ICON_ROWS = [
+EXAMPLE_EFFECT_ICON_ROWS_SALTY_SKIRT = [
     166,
     140,
     151,
@@ -51,6 +51,50 @@ EXAMPLE_EFFECT_ICON_ROWS = [
     175,
     189,
     173,
+]
+
+EXAMPLE_EFFECT_ICON_ROWS_COMPATIBILITY = [
+    42,
+    4,
+    6,
+    5,
+    28,
+    26,
+    34,
+    7,
+    29,
+    30,
+    27,
+    23,
+    35,
+    16,
+    8,
+    14,
+    13,
+    10,
+    15,
+    25,
+    9,
+    21,
+    39,
+    38,
+    37,
+    36,
+    24,
+    11,
+    31,
+    43,
+    12,
+    20,
+    33,
+    19,
+    22,
+    18,
+    32,
+    40,
+    17,
+    41,
+    44,
 ]
 
 EXAMPLE_INGREDIENT_ICON_COLS = [

@@ -334,7 +334,6 @@ base_effects: dict[PotionBases, dict[Effects, EffectPosition]] = {
     PotionBases.Unknown: {},  # Unknown base so cannot determine potion effect existence.
 }
 
-
 if __name__ == "__main__":
     print(Effects.AcidProtection.base_price)
     print(Effects.Rage.base_price)
