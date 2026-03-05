@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from ..common import ASSET_DATA_DIR
 from ..effects import Effects, PotionBases
 from ..ingredients import Ingredients, Salts
 from ..recipe_database import (
@@ -1253,10 +1254,13 @@ class FilterTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
 
         top = QtWidgets.QHBoxLayout()
-        self.db_path_edit = QtWidgets.QLineEdit(self.app.db_path)
+        default_tome = Path(getattr(self.app, "external_data_path", "")).expanduser() / "tome.xlsx"
+        if not default_tome.exists():
+            default_tome = ASSET_DATA_DIR / "tome.xlsx"
+        self.tome_path_edit = QtWidgets.QLineEdit(str(default_tome))
         browse_btn = QtWidgets.QPushButton("Browse")
-        init_btn = QtWidgets.QPushButton("Init from Snapshot")
-        top.addWidget(self.db_path_edit)
+        init_btn = QtWidgets.QPushButton("Init from Tome")
+        top.addWidget(self.tome_path_edit)
         top.addWidget(browse_btn)
         top.addWidget(init_btn)
         layout.addLayout(top)
@@ -1445,7 +1449,7 @@ class FilterTab(QtWidgets.QWidget):
         self.output = output
         layout.addWidget(output)
 
-        browse_btn.clicked.connect(self._browse_db)
+        browse_btn.clicked.connect(self._browse_tome)
         init_btn.clicked.connect(self._init_db_from_snapshot)
         add_required_btn.clicked.connect(self._add_required_effect)
         set_effect_range_btn.clicked.connect(self._add_required_tier)
@@ -1461,7 +1465,6 @@ class FilterTab(QtWidgets.QWidget):
         set_potion_btn.clicked.connect(self._set_tiers_from_potion)
         filter_btn.clicked.connect(self._run_filter)
         export_btn.clicked.connect(self._export_results)
-        self.db_path_edit.editingFinished.connect(self._sync_db_path)
 
         self.tier_effect_select.currentTextChanged.connect(
             lambda _value: self._sync_range_selection(
@@ -1578,19 +1581,22 @@ class FilterTab(QtWidgets.QWidget):
                     combo.setCurrentIndex(idx)
         self._populate_potion_select()
 
-    def _browse_db(self) -> None:
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select DB", "", "SQLite DB (*.sqlite3);;All files (*.*)")
+    def _browse_tome(self) -> None:
+        base_dir = self.tome_path_edit.text().strip() or getattr(self.app, "external_data_path", "")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Tome Snapshot", base_dir, "Excel (*.xlsx);;All files (*.*)")
         if path:
-            self.db_path_edit.setText(path)
-            self._sync_db_path()
+            self.tome_path_edit.setText(path)
 
     def _init_db_from_snapshot(self) -> None:
-        self._sync_db_path()
-        raw_path = self.app.db_path
-        if not raw_path:
+        db_path = Path(self.app.db_path)
+        if not str(db_path):
             QtWidgets.QMessageBox.warning(self, "Init Database", "Database path is required.")
             return
-        db_path = Path(raw_path)
+        tome_raw = self.tome_path_edit.text().strip()
+        tome_path = Path(tome_raw) if tome_raw else (ASSET_DATA_DIR / "tome.xlsx")
+        if not tome_path.exists():
+            QtWidgets.QMessageBox.warning(self, "Init Database", f"Tome file not found:\n{tome_path}")
+            return
         if db_path.exists():
             should_overwrite = QtWidgets.QMessageBox.question(
                 self,
@@ -1600,7 +1606,7 @@ class FilterTab(QtWidgets.QWidget):
             if should_overwrite != QtWidgets.QMessageBox.StandardButton.Yes:
                 return
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        count = build_database_from_tome(db_path=db_path)
+        count = build_database_from_tome(db_path=db_path, tome_path=tome_path)
         QtWidgets.QMessageBox.information(self, "Init Database", f"Loaded {count} recipes from snapshot.")
 
     def _add_required_effect(self) -> None:
@@ -1747,7 +1753,6 @@ class FilterTab(QtWidgets.QWidget):
         self.effect_ranges.setText(", ".join(parts))
 
     def _run_filter(self) -> None:
-        self._sync_db_path()
         try:
             required_effects = _parse_enum_list(self.require_effects.text(), Effects, "effect_name")
             effect_ranges = _parse_ranges(self.effect_ranges.text(), Effects, "effect_name")
@@ -1867,7 +1872,6 @@ class FilterTab(QtWidgets.QWidget):
             self._open_icon_view(recipes)
 
     def _export_results(self) -> None:
-        self._sync_db_path()
         if not self.app.last_results:
             QtWidgets.QMessageBox.information(self, "Export", "No results to export.")
             return
@@ -1933,7 +1937,3 @@ class FilterTab(QtWidgets.QWidget):
         )
         window.exec()
 
-    def _sync_db_path(self) -> None:
-        value = self.db_path_edit.text().strip()
-        if value:
-            self.app.set_db_path(value)

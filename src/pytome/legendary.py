@@ -21,7 +21,7 @@ LifeSalt_1 = Potion.from_name(
 LifeSalt_2 = Potion.from_name(AntiMagic=3, StoneSkin=2)
 LifeSalt_3 = Potion.from_name(Rejuvenation=3, Healing=2)
 LifeSalt_4 = Potion.from_name(Healing=3, Mana=2)
-LifeSalt_5 = Potion.from_name(Stoneskin=3, Strength=2)
+LifeSalt_5 = Potion.from_name(StoneSkin=3, Strength=2)
 LifeSalt_6 = Potion.from_name(Libido=3, Charm=2)
 LifeSalt_7 = Potion.from_name(Acid=3, Poison=2)
 PhiloStone_1 = Potion.from_name(
@@ -37,7 +37,7 @@ PhiloStone_4 = Potion.from_name(Invisibility=1, Levitation=1, Fear=1, Necromancy
 PhiloStone_5 = Potion.from_name(Enlargement=1, Gluing=1, AntiMagic=1, Slipperiness=1, Shrinking=1)
 PhiloSalt_1 = Potion.from_name(Fragrance=1, Luck=1, Inspiration=1, Fear=1, Curse=1)
 PhiloSalt_2 = Potion.from_name(Hallucinations=1, Levitation=1, Libido=1, Acid=1, Necromancy=1)
-PhiloSalt_3 = Potion.from_name(Mana=1, MagicalVision=1, Hallucinations=1, AntiMagic=1, Luck=1)
+PhiloSalt_3 = Potion.from_name(Mana=1, MagicalVision=1, Charm=1, Rage=1, Slowness=1)
 PhiloSalt_4 = Potion.from_name(Strength=1, Frost=1, Sleep=1, Dexterity=1, Swiftness=1)
 PhiloSalt_5 = Potion.from_name(Enlargement=1, AntiMagic=1, Shrinking=1, AcidProtection=1, Rejuvenation=1)
 PhiloSalt_6 = Potion.from_name(
@@ -50,7 +50,7 @@ PhiloSalt_6 = Potion.from_name(
 PhiloSalt_7 = Potion.from_name(Gluing=1, Stench=1, Light=1, Invisibility=1, Slipperiness=1)
 PhiloSalt_8 = Potion.from_name(WildGrowth=1, Poison=1, Fire=1, Explosion=1, Lightning=1)
 PhiloSalt_9 = Potion.from_name(Strength=1, Healing=1, Dexterity=1, Mana=1, Swiftness=1)
-PhiloSalt_10 = Potion.from_name(Mana=1, MagicalVision=1, Charm=1, Rage=1, Slowness=1)
+PhiloSalt_10 = Potion.from_name(Mana=1, MagicalVision=1, Hallucinations=1, AntiMagic=1, Luck=1)
 PhiloSalt_11 = Potion.from_name(Healing=1, Fragrance=1, Rejuvenation=1, Charm=1, Libido=1)
 PhiloSalt_12 = Potion.from_name(Rage=1, Fear=1, Enlargement=1, Curse=1, Necromancy=1)
 

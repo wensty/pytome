@@ -620,11 +620,14 @@ def clear_recipe_data(db_path: pathlib.Path = DEFAULT_DB_PATH) -> None:
         conn.execute("DELETE FROM recipes")
 
 
-def build_database_from_tome(db_path: pathlib.Path = DEFAULT_DB_PATH) -> int:
+def build_database_from_tome(
+    db_path: pathlib.Path = DEFAULT_DB_PATH,
+    tome_path: str | pathlib.Path | None = None,
+) -> int:
     from .read_tome_recipes import read_tome_recipes
 
     clear_recipe_data(db_path=db_path)
-    recipes, comments, links = read_tome_recipes()
+    recipes, comments, links = read_tome_recipes(tome_path=tome_path)
     return save_recipes(recipes, comments=comments, links=links, db_path=db_path)
 
 

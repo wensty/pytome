@@ -1,6 +1,7 @@
 import pickle
 import re
 from hashlib import md5
+from pathlib import Path
 from typing import Union
 
 import openpyxl
@@ -26,8 +27,9 @@ def to_int(x):
     return 0
 
 
-def read_tome_recipes():
-    tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
+def read_tome_recipes(tome_path: str | Path | None = None):
+    source_path = Path(tome_path) if tome_path is not None else ASSET_DATA_DIR / "tome.xlsx"
+    tome = openpyxl.open(source_path, data_only=True)
     recipe_dump: set[Recipe] = set()
     comments: list[Comment] = []
     links: list[RecipeLink] = []
@@ -47,6 +49,7 @@ def read_tome_recipes():
             if legendary_match is not None:
                 groups = legendary_match.groups()
                 key = f"{groups[0]}{groups[1]}_{groups[2]}"
+                print(key)
                 if key in Correction:
                     key = Correction[key]
                 potion = Legendary.__dict__[key]
@@ -217,7 +220,8 @@ def read_tome_recipes():
 
 if __name__ == "__main__":
     recipe_dump, comment_dump, link_dump = read_tome_recipes()
-    print(f"Read {len(recipe_dump)} recipes, {len(comment_dump)} comments and {len(link_dump)} links.")
+    print(recipe_dump.pop())
+    # print(f"Read {len(recipe_dump)} recipes, {len(comment_dump)} comments and {len(link_dump)} links.")
     # print(comment_dump)
     # with open("recipe_dump.pkl", "wb") as f:
     #     pickle.dump(recipe_dump, f)

@@ -178,6 +178,12 @@ class Comment:
 
 
 @dataclass
+class DullLowlanderComment:
+    target_effect: Effects
+    ingredient: Ingredients
+
+
+@dataclass
 class RecipeLink:
     target: Recipe
     type: LinkType

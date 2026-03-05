@@ -206,4 +206,34 @@ def _load_effect_md5s() -> dict[str, int]:
         return pickle.load(f)
 
 
+def convert_to_column_letter(column_number: int) -> str:
+    """
+    Convert column number to column letter
+    """
+    assert column_number > 0
+    result = ""
+    while column_number > 0:
+        column_number -= 1
+        result = chr(column_number % 26 + 65) + result
+        column_number = column_number // 26
+    return result
+
+
+def convert_to_column_number(column_letter: str) -> int:
+    """
+    Convert column letter to column number
+    """
+    result = 0
+    for char in column_letter:
+        assert "A" <= char <= "Z"
+        result = result * 26 + (ord(char) - 64)
+    return result
+
+
 effect_md5s = _load_effect_md5s()
+
+if __name__ == "__main__":
+    print(convert_to_column_letter(1))
+    print(convert_to_column_letter(26))
+    print(convert_to_column_number("A"))
+    print(convert_to_column_number("ZZ"))
