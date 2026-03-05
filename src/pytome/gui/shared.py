@@ -260,18 +260,17 @@ def _parse_range_value(raw: str) -> tuple[float | None, float | None]:
 
 def _collect_potion_defs() -> dict[str, EffectTierList]:
     from .. import legendary as Legendary
-    from .. import single_effect as SingleEffect
 
-    def _collect(module) -> dict[str, EffectTierList]:
+    def _collect_complex_legendary(module) -> dict[str, EffectTierList]:
         items: dict[str, EffectTierList] = {}
         for name, value in module.__dict__.items():
             if name.startswith("_"):
                 continue
             if isinstance(value, EffectTierList):
-                items[f"{module.__name__}.{name}"] = value
+                nonzero_count = sum(1 for tier in value if tier > 0)
+                if nonzero_count >= 2:
+                    items[f"{module.__name__}.{name}"] = value
         return items
 
-    potions: dict[str, EffectTierList] = {}
-    potions.update(_collect(SingleEffect))
-    potions.update(_collect(Legendary))
-    return potions
+    potions = _collect_complex_legendary(Legendary)
+    return dict(sorted(potions.items(), key=lambda item: item[0]))

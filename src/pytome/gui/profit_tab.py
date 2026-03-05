@@ -19,6 +19,7 @@ from ..requirements import (
     WeakRecipe,
 )
 from ..recipes import EffectTierList, IngredientNumList, Recipe, SaltGrainList
+from .icons import IconCache
 from .shared import (
     _append_csv,
     _format_pairs,
@@ -33,6 +34,8 @@ class ProfitTab(QtWidgets.QWidget):
     def __init__(self, app) -> None:
         super().__init__()
         self.app = app
+        self.icon_cache = IconCache()
+        self._selector_combos: list[tuple[QtWidgets.QComboBox, str, list[tuple[str, str]]]] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -95,24 +98,15 @@ class ProfitTab(QtWidgets.QWidget):
         editor = QtWidgets.QGridLayout(editor_box)
         layout.addWidget(editor_box)
 
-        base_names = [base.name for base in PotionBases]
-        effect_names = [effect.effect_name for effect in Effects]
-        ingredient_names = [ingredient.ingredient_name for ingredient in Ingredients]
-        salt_names = [salt.salt_name for salt in Salts]
-
         self.profit_recipe_base = QtWidgets.QComboBox()
-        self.profit_recipe_base.addItems(base_names)
         self.profit_recipe_effects = QtWidgets.QLineEdit()
         self.profit_recipe_ingredients = QtWidgets.QLineEdit()
         self.profit_recipe_salts = QtWidgets.QLineEdit()
         self.profit_recipe_effect_select = QtWidgets.QComboBox()
-        self.profit_recipe_effect_select.addItems(effect_names)
         self.profit_recipe_effect_tier = QtWidgets.QLineEdit("1")
         self.profit_recipe_ingredient_select = QtWidgets.QComboBox()
-        self.profit_recipe_ingredient_select.addItems(ingredient_names)
         self.profit_recipe_ingredient_amount = QtWidgets.QLineEdit("1")
         self.profit_recipe_salt_select = QtWidgets.QComboBox()
-        self.profit_recipe_salt_select.addItems(salt_names)
         self.profit_recipe_salt_amount = QtWidgets.QLineEdit("1")
 
         editor.addWidget(QtWidgets.QLabel("Base"), 0, 0)
@@ -160,19 +154,12 @@ class ProfitTab(QtWidgets.QWidget):
         requests.addWidget(self.profit_request_strong, 0, 2)
         requests.addWidget(self.profit_request_extra, 0, 3)
 
-        ingredient_names = [ingredient.ingredient_name for ingredient in Ingredients]
-        base_names = [base.name for base in PotionBases if base != PotionBases.Unknown]
         self.profit_lowlander = QtWidgets.QLineEdit()
         self.profit_add_ingredient = QtWidgets.QComboBox()
-        self.profit_add_ingredient.addItems([""] + ingredient_names)
         self.profit_half_ingredient = QtWidgets.QComboBox()
-        self.profit_half_ingredient.addItems([""] + ingredient_names)
         self.profit_exclude_ingredient = QtWidgets.QComboBox()
-        self.profit_exclude_ingredient.addItems([""] + ingredient_names)
         self.profit_base = QtWidgets.QComboBox()
-        self.profit_base.addItems([""] + base_names)
         self.profit_not_base = QtWidgets.QComboBox()
-        self.profit_not_base.addItems([""] + base_names)
 
         requests.addWidget(QtWidgets.QLabel("Lowlander"), 1, 0)
         requests.addWidget(self.profit_lowlander, 1, 1)
@@ -207,6 +194,42 @@ class ProfitTab(QtWidgets.QWidget):
         salt_set_btn.clicked.connect(self._add_profit_recipe_salt)
         add_required_btn.clicked.connect(self._add_profit_required_effect)
         calc_btn.clicked.connect(self._calculate_profit)
+        self._initialize_selector_items()
+        self.apply_options()
+
+    def _initialize_selector_items(self) -> None:
+        base_items = [(base.name, base.name) for base in PotionBases]
+        effect_items = [(effect.effect_name, effect.effect_name) for effect in Effects]
+        ingredient_items = [("", "")] + [(ingredient.ingredient_name, ingredient.ingredient_name) for ingredient in Ingredients]
+        salt_items = [(salt.salt_name, salt.salt_name) for salt in Salts]
+        base_req_items = [("", "")] + [(base.name, base.name) for base in PotionBases if base != PotionBases.Unknown]
+        self._selector_combos = [
+            (self.profit_recipe_base, "bases", base_items),
+            (self.profit_recipe_effect_select, "effects", effect_items),
+            (self.profit_recipe_ingredient_select, "ingredients", ingredient_items[1:]),
+            (self.profit_recipe_salt_select, "salts", salt_items),
+            (self.profit_add_ingredient, "ingredients", ingredient_items),
+            (self.profit_half_ingredient, "ingredients", ingredient_items),
+            (self.profit_exclude_ingredient, "ingredients", ingredient_items),
+            (self.profit_base, "bases", base_req_items),
+            (self.profit_not_base, "bases", base_req_items),
+        ]
+
+    def apply_options(self) -> None:
+        use_icons = bool(getattr(self.app, "use_icon_selectors", False))
+        for combo, folder, items in self._selector_combos:
+            current_text = combo.currentText()
+            combo.clear()
+            for text, icon_name in items:
+                combo.addItem(text)
+                if use_icons and icon_name:
+                    icon = self.icon_cache.icon(folder, icon_name, 16)
+                    if icon is not None:
+                        combo.setItemIcon(combo.count() - 1, icon)
+            if current_text:
+                idx = combo.findText(current_text)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
 
     def _calculate_profit(self) -> None:
         try:
@@ -272,13 +295,15 @@ class ProfitTab(QtWidgets.QWidget):
             if len(requests) > 4:
                 raise ValueError("Customers can only make up to 4 requests.")
 
+            is_customer_result = bool(required_effects)
             profit = calculate_profit(
                 recipe,
                 profit_stat,
-                required_effects=required_effects if required_effects else None,
+                required_effects=required_effects if is_customer_result else None,
                 requests=requests if requests else None,
             )
-            self.profit_output.setText(f"Profit: {profit:.1f}")
+            result_type = "Customer Result" if is_customer_result else "Merchant Result"
+            self.profit_output.setText(f"Profit: {profit:.1f} ({result_type})")
         except (ValueError, KeyError) as exc:
             QtWidgets.QMessageBox.warning(self, "Profit Calculator", str(exc))
 

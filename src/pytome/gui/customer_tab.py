@@ -6,6 +6,7 @@ from PyQt6 import QtWidgets
 
 from ..customer_database import build_customer_database, load_customer_requests, load_story_lines
 from ..effects import Effects
+from .icons import IconCache
 from .shared import _append_csv, _parse_enum_list
 
 
@@ -13,6 +14,7 @@ class CustomerTab(QtWidgets.QWidget):
     def __init__(self, app) -> None:
         super().__init__()
         self.app = app
+        self.icon_cache = IconCache()
         self.customer_story_vars: dict[str, QtWidgets.QCheckBox] = {}
         self._build_ui()
 
@@ -34,7 +36,6 @@ class CustomerTab(QtWidgets.QWidget):
         self.customer_text = QtWidgets.QLineEdit()
         self.customer_effects = QtWidgets.QLineEdit()
         self.customer_effect_select = QtWidgets.QComboBox()
-        self.customer_effect_select.addItems([effect.effect_name for effect in Effects])
 
         filters_layout.addWidget(QtWidgets.QLabel("Text"), 0, 0)
         filters_layout.addWidget(self.customer_text, 0, 1, 1, 3)
@@ -79,6 +80,22 @@ class CustomerTab(QtWidgets.QWidget):
         add_effect_btn.clicked.connect(self._add_customer_effect)
         build_btn.clicked.connect(self._build_customer_db)
         search_btn.clicked.connect(self._search_customers)
+        self.apply_options()
+
+    def apply_options(self) -> None:
+        use_icons = bool(getattr(self.app, "use_icon_selectors", False))
+        current_text = self.customer_effect_select.currentText()
+        self.customer_effect_select.clear()
+        for effect in Effects:
+            self.customer_effect_select.addItem(effect.effect_name)
+            if use_icons:
+                icon = self.icon_cache.icon("effects", effect.effect_name, 16)
+                if icon is not None:
+                    self.customer_effect_select.setItemIcon(self.customer_effect_select.count() - 1, icon)
+        if current_text:
+            idx = self.customer_effect_select.findText(current_text)
+            if idx >= 0:
+                self.customer_effect_select.setCurrentIndex(idx)
 
     def _add_customer_effect(self) -> None:
         name = self.customer_effect_select.currentText().strip()
