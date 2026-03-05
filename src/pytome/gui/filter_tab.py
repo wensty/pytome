@@ -739,6 +739,10 @@ class RecipeIconWindow(QtWidgets.QDialog):
             LinkType.Discord: [record.url for record in links if record.link_type == LinkType.Discord and record.url],
         }
 
+    def _refresh_metadata_maps(self, db_path: Path) -> None:
+        self.links_by_hash = load_recipe_links(db_path)
+        self.comments_by_hash = load_recipe_comments(db_path)
+
     def _add_recipe(self) -> None:
         dialog = RecipeEditorDialog(self, "Add Recipe", None, links=None)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
@@ -761,9 +765,9 @@ class RecipeIconWindow(QtWidgets.QDialog):
             delete_recipe_by_hash(new_hash, db_path=db_path)
         add_recipe(new_recipe, db_path=db_path)
         replace_recipe_links_by_hash(new_hash, new_links, db_path=db_path)
-        self.recipes = load_recipes(db_path)
-        self.links_by_hash = load_recipe_links(db_path)
-        self.comments_by_hash = load_recipe_comments(db_path)
+        self.recipes = [r for r in self.recipes if get_recipe_hash(r) != new_hash]
+        self.recipes.append(new_recipe)
+        self._refresh_metadata_maps(db_path)
         self._rebuild_page(self.current_page)
 
     def _view_recipe(self, recipe: Recipe) -> None:
@@ -793,11 +797,20 @@ class RecipeIconWindow(QtWidgets.QDialog):
                 "Recipe Merged",
                 "Edited recipe was merged into an existing identical recipe. Metadata and comments were relinked.",
             )
+            merged_exists_elsewhere = any(
+                idx != recipe_idx and get_recipe_hash(candidate) == final_hash
+                for idx, candidate in enumerate(self.recipes)
+            )
+            if merged_exists_elsewhere:
+                if 0 <= recipe_idx < len(self.recipes):
+                    self.recipes.pop(recipe_idx)
+            elif 0 <= recipe_idx < len(self.recipes):
+                self.recipes[recipe_idx] = updated
         else:
             replace_recipe_links_by_hash(final_hash, updated_links, db_path=db_path)
-        self.recipes = load_recipes(db_path)
-        self.links_by_hash = load_recipe_links(db_path)
-        self.comments_by_hash = load_recipe_comments(db_path)
+            if 0 <= recipe_idx < len(self.recipes):
+                self.recipes[recipe_idx] = updated
+        self._refresh_metadata_maps(db_path)
         self._rebuild_page(self.current_page)
 
     def _delete_recipe(self, recipe_idx: int, recipe: Recipe) -> None:
@@ -809,9 +822,9 @@ class RecipeIconWindow(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Delete Recipe", "Recipe not found in database.")
             return
         db_path = Path(self.app.db_path)
-        self.recipes = load_recipes(db_path)
-        self.links_by_hash = load_recipe_links(db_path)
-        self.comments_by_hash = load_recipe_comments(db_path)
+        if 0 <= recipe_idx < len(self.recipes):
+            self.recipes.pop(recipe_idx)
+        self._refresh_metadata_maps(db_path)
         self._rebuild_page(self.current_page)
 
     def _build_effects_widget(self, recipe: Recipe) -> QtWidgets.QWidget:

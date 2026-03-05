@@ -167,9 +167,7 @@ def read_tome_effect_compatibilties() -> list[list[int]]:
         effect = effect_md5s[effect_md5]
         effect_list.append(effect)
 
-    _compatibilitie_matrix: list[list[int]] = [
-        [0 for _ in range(NUMBER_OF_EFFECTS)] for _ in range(NUMBER_OF_EFFECTS)
-    ]
+    _compatibilitie_matrix: list[list[int]] = [[0 for _ in range(NUMBER_OF_EFFECTS)] for _ in range(NUMBER_OF_EFFECTS)]
     for i in range(NUMBER_OF_EFFECTS):
         main_effect = effect_list[i]
         for j in range(NUMBER_OF_EFFECTS):

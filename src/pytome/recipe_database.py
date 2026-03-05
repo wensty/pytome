@@ -260,15 +260,8 @@ def save_recipes(
             )
             saved_count += 1
         if links is not None:
-            link_records_with_hash = [
-                (_recipe_hash(link.target), RecipeLinkRecord(link_type=link.type, url=link.url))
-                for link in links
-            ]
-            link_records_with_hash = [
-                (recipe_hash, record)
-                for recipe_hash, record in link_records_with_hash
-                if record.url
-            ]
+            link_records_with_hash = [(_recipe_hash(link.target), RecipeLinkRecord(link_type=link.type, url=link.url)) for link in links]
+            link_records_with_hash = [(recipe_hash, record) for recipe_hash, record in link_records_with_hash if record.url]
             seen_links: set[tuple[str, int, str]] = set()
             for link_recipe_hash, record in link_records_with_hash:
                 link_key = (link_recipe_hash, int(record.link_type), record.url)
@@ -435,6 +428,7 @@ def update_recipe_by_id(recipe_id: int, recipe: Recipe, db_path: pathlib.Path = 
             raise ValueError(f"Recipe id {recipe_id} not found.")
         _write_recipe_details(conn, recipe_id, recipe)
     return recipe_id
+
 
 def update_recipe_by_hash(recipe_hash: str, recipe: Recipe, db_path: pathlib.Path = DEFAULT_DB_PATH) -> int:
     with sqlite3.connect(db_path) as conn:
