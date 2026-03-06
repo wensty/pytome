@@ -8,8 +8,18 @@ import openpyxl
 from openpyxl_image_loader import SheetImageLoader
 
 from .common import ASSET_DATA_DIR, effect_md5s
-from .effects import NUMBER_OF_EFFECTS
-from .recipes import Recipe, PotionBases, Comment, CommentType, LinkType, RecipeLink
+from .effects import NUMBER_OF_EFFECTS, Effects
+from .recipes import (
+    Recipe,
+    PotionBases,
+    Comment,
+    CommentType,
+    LinkType,
+    RecipeLink,
+    DullLowlanderComment,
+    DullLowlanderCellStatus,
+    LOWLANDER_STATUS_RGB,
+)
 from .recipes import Ingredients, Salts, NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
 from .recipes import Potion, IngredientNumList, SaltGrainList
 from . import legendary as Legendary
@@ -218,12 +228,115 @@ def read_tome_recipes(tome_path: str | Path | None = None):
     return recipe_dump, comments, links
 
 
+def read_tome_dull_lowlander_comments(tome_path: str | Path | None = None):
+    recipe_comments: list[Comment] = []
+    dull_lowlander_comments: list[DullLowlanderComment] = []
+
+    _bases = [PotionBases.Water, PotionBases.Oil, PotionBases.Wine]
+    _row_starts = [4, 46, 68]
+    _row_ends = [45, 67, 89]
+    tome_path = tome_path if tome_path is not None else ASSET_DATA_DIR / "tome.xlsx"
+
+    # find first sheet name that contains "Testing Dull Lowlander"
+    sheet_name_regex_pattern = re.compile(r"Testing Dull Lowlander.*")
+    ingredinent_num_regex_pattern = re.compile(r"^(\d*)(\**)$")
+    tome = openpyxl.open(tome_path, data_only=True)
+    sheet = None
+    for sheet_name in tome.sheetnames:
+        if sheet_name_regex_pattern.match(sheet_name):
+            sheet = tome[sheet_name]
+            break
+    assert sheet is not None
+    sheet_image_loader = SheetImageLoader(sheet)
+    # iterating over all base-effect-ingredient combinations
+    for base, row_start, row_end in zip(_bases, _row_starts, _row_ends):
+        for row in range(row_start, row_end):
+            assert sheet_image_loader.image_in(f"B{row}")
+            effect_image = sheet_image_loader.get(f"B{row}")
+            effect_md5 = md5(pickle.dumps(effect_image)).hexdigest()
+            effect = Effects(effect_md5s[effect_md5])
+            for col in range(5, 63):
+                # read Comments
+                ingredient = Ingredients(col - 5)
+                comment = sheet.cell(row, col).comment
+                if comment is not None:
+                    comment_text = comment.text
+                    comment_author = comment.author if comment.author != "None" else "Anonymous"
+                    value = sheet.cell(row, col).value
+                    if value is not None:
+                        # if number of ingredients detected:
+                        # the comment can be linked to a recipe.
+                        match = ingredinent_num_regex_pattern.match(str(value))
+                        if match is not None:
+                            groups = match.groups()
+                            ingredient_num = int(groups[0])
+                            ingredient_num_stars = len(groups[1])
+                            _dull_reachable_tier = effect.dull_reachable_tier(base)
+                            # the stars means that the recipe reaches less than best dull reachable tier.
+                            _potion = Potion.from_name(**{effect.name: _dull_reachable_tier if ingredient_num_stars == 0 else ingredient_num_stars})
+                            _ingredient_nums = [0] * NUMBER_OF_INGREDIENTS
+                            _ingredient_nums[ingredient] = ingredient_num
+                            ingredient_num_list = IngredientNumList(_ingredient_nums)
+                            _salt_grains = [0] * NUMBER_OF_SALTS
+                            salt_grain_list = SaltGrainList(_salt_grains)
+                            recipe = Recipe(base, _potion, ingredient_num_list, salt_grain_list)
+                            recipe_comments.append(Comment(recipe, CommentType.Plotter, comment_author, comment_text))
+                        # else: the value does not match the pattern.
+                        # the comment is saved as a dull lowlander comment.
+                        else:
+                            dull_lowlander_comments.append(DullLowlanderComment(base, effect, ingredient, comment_author, comment_text))
+                    # else: here has no value.
+                    else:
+                        dull_lowlander_comments.append(DullLowlanderComment(base, effect, ingredient, comment_author, comment_text))
+    return recipe_comments, dull_lowlander_comments
+
+
+def read_tome_dull_lowlander_statuses(tome_path: str | Path | None = None) -> list[DullLowlanderCellStatus]:
+    statuses: list[DullLowlanderCellStatus] = []
+    _bases = [PotionBases.Water, PotionBases.Oil, PotionBases.Wine]
+    _row_starts = [4, 46, 68]
+    _row_ends = [45, 67, 89]
+    source_path = Path(tome_path) if tome_path is not None else ASSET_DATA_DIR / "tome.xlsx"
+
+    sheet_name_regex_pattern = re.compile(r"Testing Dull Lowlander.*")
+    tome = openpyxl.open(source_path, data_only=True)
+    sheet = None
+    for sheet_name in tome.sheetnames:
+        if sheet_name_regex_pattern.match(sheet_name):
+            sheet = tome[sheet_name]
+            break
+    assert sheet is not None
+    sheet_image_loader = SheetImageLoader(sheet)
+
+    for base, row_start, row_end in zip(_bases, _row_starts, _row_ends):
+        for row in range(row_start, row_end):
+            assert sheet_image_loader.image_in(f"B{row}")
+            effect_image = sheet_image_loader.get(f"B{row}")
+            effect_md5 = md5(pickle.dumps(effect_image)).hexdigest()
+            effect = Effects(effect_md5s[effect_md5])
+            for col in range(5, 63):
+                ingredient = Ingredients(col - 5)
+                cell = sheet.cell(row, col)
+                color_rgb = None
+                fill = cell.fill
+                if fill is not None:
+                    color_rgb = str(fill.fgColor.rgb)
+                status = LOWLANDER_STATUS_RGB.get(color_rgb) if color_rgb else None
+                statuses.append(DullLowlanderCellStatus(base, effect, ingredient, status))
+    return statuses
+
+
 if __name__ == "__main__":
-    recipe_dump, comment_dump, link_dump = read_tome_recipes()
-    print(recipe_dump.pop())
+    # recipe_dump, comment_dump, link_dump = read_tome_recipes()
+    # print(recipe_dump.pop())
     # print(f"Read {len(recipe_dump)} recipes, {len(comment_dump)} comments and {len(link_dump)} links.")
     # print(comment_dump)
     # with open("recipe_dump.pkl", "wb") as f:
     #     pickle.dump(recipe_dump, f)
     # with open("comment_dump.pkl", "wb") as f:
     #     pickle.dump(comment_dump, f)
+    # recipe_comments, dull_lowlander_comments = read_tome_dull_lowlander_comments()
+    # print(recipe_comments)
+    # print(dull_lowlander_comments)
+    statuses = read_tome_dull_lowlander_statuses()
+    print(statuses)

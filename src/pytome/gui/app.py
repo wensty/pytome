@@ -9,6 +9,7 @@ from PyQt6 import QtWidgets
 from ..common import DB_DATA_DIR
 from .compatibility_tab import CompatibilityTab
 from .customer_tab import CustomerTab
+from .dull_lowlander_tab import DullLowlanderTab
 from .filter_tab import FilterTab
 from .options_tab import OptionsTab
 from .profit_tab import ProfitTab
@@ -32,15 +33,17 @@ class TomeApp(QtWidgets.QMainWindow):
         profit_tab = ProfitTab(self)
         compatibility_tab = CompatibilityTab(self)
         customer_tab = CustomerTab(self)
+        dull_lowlander_tab = DullLowlanderTab(self)
         options_tab = OptionsTab(self)
         tabs.addTab(filter_tab, "Filter")
         tabs.addTab(profit_tab, "Profit")
         tabs.addTab(compatibility_tab, "Compatibility")
         tabs.addTab(customer_tab, "Customers")
+        tabs.addTab(dull_lowlander_tab, "Dull Lowlander")
         options_idx = tabs.addTab(options_tab, "Options")
         tabs.setCurrentIndex(options_idx)
         self.setCentralWidget(tabs)
-        self._option_listeners = [filter_tab, profit_tab, customer_tab, options_tab]
+        self._option_listeners = [filter_tab, profit_tab, customer_tab, dull_lowlander_tab, options_tab]
         self._notify_option_listeners()
 
     def _notify_option_listeners(self) -> None:

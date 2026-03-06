@@ -7,9 +7,19 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from .common import DB_DATA_DIR
-from .effects import NUMBER_OF_EFFECTS, PotionBases
-from .ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
-from .recipes import Comment, CommentType, IngredientNumList, LinkType, Potion, Recipe, RecipeLink, SaltGrainList
+from .effects import Effects, NUMBER_OF_EFFECTS, PotionBases
+from .ingredients import Ingredients, NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS
+from .recipes import (
+    Comment,
+    CommentType,
+    DullLowlanderStatus,
+    IngredientNumList,
+    LinkType,
+    Potion,
+    Recipe,
+    RecipeLink,
+    SaltGrainList,
+)
 
 DEFAULT_DB_PATH = DB_DATA_DIR / "tome.sqlite3"
 
@@ -25,6 +35,23 @@ class RecipeCommentRecord:
 class RecipeLinkRecord:
     link_type: LinkType
     url: str
+
+
+@dataclass(frozen=True)
+class DullLowlanderCommentRecord:
+    base: PotionBases
+    effect: Effects
+    ingredient: Ingredients
+    author: str
+    text: str
+
+
+@dataclass(frozen=True)
+class DullLowlanderStatusRecord:
+    base: PotionBases
+    effect: Effects
+    ingredient: Ingredients
+    status: DullLowlanderStatus | None
 
 
 def _normalize_comment_records(records: Iterable[RecipeCommentRecord]) -> list[RecipeCommentRecord]:
@@ -53,6 +80,47 @@ def _normalize_link_records(records: Iterable[RecipeLinkRecord]) -> list[RecipeL
             continue
         seen.add(key)
         deduped.append(RecipeLinkRecord(link_type=record.link_type, url=url))
+    return deduped
+
+
+def _normalize_dull_lowlander_comment_records(records: Iterable[DullLowlanderCommentRecord]) -> list[DullLowlanderCommentRecord]:
+    deduped: list[DullLowlanderCommentRecord] = []
+    seen: set[tuple[int, int, int, str, str]] = set()
+    for record in records:
+        author = str(record.author or "Anonymous")
+        text = str(record.text or "")
+        key = (int(record.base), int(record.effect), int(record.ingredient), author, text)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(
+            DullLowlanderCommentRecord(
+                base=record.base,
+                effect=record.effect,
+                ingredient=record.ingredient,
+                author=author,
+                text=text,
+            )
+        )
+    return deduped
+
+
+def _normalize_dull_lowlander_status_records(records: Iterable[DullLowlanderStatusRecord]) -> list[DullLowlanderStatusRecord]:
+    deduped: list[DullLowlanderStatusRecord] = []
+    seen: set[tuple[int, int, int]] = set()
+    for record in records:
+        key = (int(record.base), int(record.effect), int(record.ingredient))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(
+            DullLowlanderStatusRecord(
+                base=record.base,
+                effect=record.effect,
+                ingredient=record.ingredient,
+                status=record.status,
+            )
+        )
     return deduped
 
 
@@ -156,6 +224,29 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS dull_lowlander_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            base INTEGER NOT NULL,
+            effect_id INTEGER NOT NULL,
+            ingredient_id INTEGER NOT NULL,
+            author TEXT NOT NULL DEFAULT "Anonymous",
+            content TEXT NOT NULL DEFAULT ""
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dull_lowlander_statuses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            base INTEGER NOT NULL,
+            effect_id INTEGER NOT NULL,
+            ingredient_id INTEGER NOT NULL,
+            status INTEGER
+        )
+        """
+    )
+    conn.execute(
+        """
         DELETE FROM recipe_comments
         WHERE id NOT IN (
             SELECT MIN(id)
@@ -176,6 +267,26 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
     conn.execute(
         """
+        DELETE FROM dull_lowlander_comments
+        WHERE id NOT IN (
+            SELECT MIN(id)
+            FROM dull_lowlander_comments
+            GROUP BY base, effect_id, ingredient_id, author, content
+        )
+        """
+    )
+    conn.execute(
+        """
+        DELETE FROM dull_lowlander_statuses
+        WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM dull_lowlander_statuses
+            GROUP BY base, effect_id, ingredient_id
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_recipe_comments_unique
         ON recipe_comments(recipe_id, comment_type, author, content)
         """
@@ -186,11 +297,25 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         ON recipe_links(recipe_id, link_type, url)
         """
     )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dull_lowlander_comments_unique
+        ON dull_lowlander_comments(base, effect_id, ingredient_id, author, content)
+        """
+    )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dull_lowlander_statuses_unique
+        ON dull_lowlander_statuses(base, effect_id, ingredient_id)
+        """
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipes_base ON recipes(base)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipe_effects_effect ON recipe_effects(effect_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipe_ingredients_ingredient ON recipe_ingredients(ingredient_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipe_links_recipe ON recipe_links(recipe_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipe_comments_recipe ON recipe_comments(recipe_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_dull_lowlander_comments_lookup ON dull_lowlander_comments(base, effect_id, ingredient_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_dull_lowlander_statuses_lookup ON dull_lowlander_statuses(base, effect_id, ingredient_id)")
 
 
 def initialize_database(db_path: pathlib.Path = DEFAULT_DB_PATH) -> None:
@@ -583,6 +708,108 @@ def load_recipe_comments(db_path: pathlib.Path = DEFAULT_DB_PATH) -> dict[str, l
     return comments_by_hash
 
 
+def load_dull_lowlander_comments(
+    db_path: pathlib.Path = DEFAULT_DB_PATH,
+) -> dict[tuple[PotionBases, Effects, Ingredients], list[DullLowlanderCommentRecord]]:
+    comments_by_cell: dict[tuple[PotionBases, Effects, Ingredients], list[DullLowlanderCommentRecord]] = {}
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT base, effect_id, ingredient_id, author, content
+            FROM dull_lowlander_comments
+            ORDER BY id
+            """
+        ).fetchall()
+        for row in rows:
+            base = PotionBases(int(row["base"]))
+            effect = Effects(int(row["effect_id"]))
+            ingredient = Ingredients(int(row["ingredient_id"]))
+            key = (base, effect, ingredient)
+            comments_by_cell.setdefault(key, []).append(
+                DullLowlanderCommentRecord(
+                    base=base,
+                    effect=effect,
+                    ingredient=ingredient,
+                    author=str(row["author"] or "Anonymous"),
+                    text=str(row["content"] or ""),
+                )
+            )
+    return comments_by_cell
+
+
+def replace_dull_lowlander_comments(
+    comments: Iterable[DullLowlanderCommentRecord],
+    db_path: pathlib.Path = DEFAULT_DB_PATH,
+) -> None:
+    normalized = _normalize_dull_lowlander_comment_records(comments)
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        conn.execute("DELETE FROM dull_lowlander_comments")
+        for comment in normalized:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO dull_lowlander_comments (base, effect_id, ingredient_id, author, content)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    int(comment.base),
+                    int(comment.effect),
+                    int(comment.ingredient),
+                    str(comment.author or "Anonymous"),
+                    str(comment.text or ""),
+                ),
+            )
+
+
+def load_dull_lowlander_statuses(
+    db_path: pathlib.Path = DEFAULT_DB_PATH,
+) -> dict[tuple[PotionBases, Effects, Ingredients], DullLowlanderStatus | None]:
+    status_by_cell: dict[tuple[PotionBases, Effects, Ingredients], DullLowlanderStatus | None] = {}
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT base, effect_id, ingredient_id, status
+            FROM dull_lowlander_statuses
+            ORDER BY id
+            """
+        ).fetchall()
+        for row in rows:
+            base = PotionBases(int(row["base"]))
+            effect = Effects(int(row["effect_id"]))
+            ingredient = Ingredients(int(row["ingredient_id"]))
+            raw_status = row["status"]
+            status = DullLowlanderStatus(int(raw_status)) if raw_status is not None else None
+            status_by_cell[(base, effect, ingredient)] = status
+    return status_by_cell
+
+
+def replace_dull_lowlander_statuses(
+    statuses: Iterable[DullLowlanderStatusRecord],
+    db_path: pathlib.Path = DEFAULT_DB_PATH,
+) -> None:
+    normalized = _normalize_dull_lowlander_status_records(statuses)
+    with sqlite3.connect(db_path) as conn:
+        _ensure_schema(conn)
+        conn.execute("DELETE FROM dull_lowlander_statuses")
+        for item in normalized:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO dull_lowlander_statuses (base, effect_id, ingredient_id, status)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    int(item.base),
+                    int(item.effect),
+                    int(item.ingredient),
+                    int(item.status) if item.status is not None else None,
+                ),
+            )
+
+
 def replace_recipe_comments_by_hash(
     recipe_hash: str,
     comments: Iterable[RecipeCommentRecord],
@@ -618,17 +845,53 @@ def clear_recipe_data(db_path: pathlib.Path = DEFAULT_DB_PATH) -> None:
         # recipe_effects / recipe_ingredients / recipe_salts / recipe_links / recipe_comments
         # will be deleted through ON DELETE CASCADE.
         conn.execute("DELETE FROM recipes")
+        conn.execute("DELETE FROM dull_lowlander_comments")
+        conn.execute("DELETE FROM dull_lowlander_statuses")
 
 
 def build_database_from_tome(
     db_path: pathlib.Path = DEFAULT_DB_PATH,
     tome_path: str | pathlib.Path | None = None,
 ) -> int:
-    from .read_tome_recipes import read_tome_recipes
+    from .read_tome_recipes import (
+        read_tome_dull_lowlander_comments,
+        read_tome_dull_lowlander_statuses,
+        read_tome_recipes,
+    )
 
     clear_recipe_data(db_path=db_path)
     recipes, comments, links = read_tome_recipes(tome_path=tome_path)
-    return save_recipes(recipes, comments=comments, links=links, db_path=db_path)
+    recipe_comments, dull_lowlander_comments = read_tome_dull_lowlander_comments(tome_path=tome_path)
+    dull_lowlander_statuses = read_tome_dull_lowlander_statuses(tome_path=tome_path)
+    all_recipes = set(recipes)
+    all_recipes.update(comment.target for comment in recipe_comments)
+    saved_count = save_recipes(all_recipes, comments=[*comments, *recipe_comments], links=links, db_path=db_path)
+    replace_dull_lowlander_comments(
+        comments=[
+            DullLowlanderCommentRecord(
+                base=item.target_base,
+                effect=item.target_effect,
+                ingredient=item.ingredient,
+                author=item.author,
+                text=item.text,
+            )
+            for item in dull_lowlander_comments
+        ],
+        db_path=db_path,
+    )
+    replace_dull_lowlander_statuses(
+        statuses=[
+            DullLowlanderStatusRecord(
+                base=item.target_base,
+                effect=item.target_effect,
+                ingredient=item.ingredient,
+                status=item.status,
+            )
+            for item in dull_lowlander_statuses
+        ],
+        db_path=db_path,
+    )
+    return saved_count
 
 
 if __name__ == "__main__":

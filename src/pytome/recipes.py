@@ -179,8 +179,39 @@ class Comment:
 
 @dataclass
 class DullLowlanderComment:
+    target_base: PotionBases
     target_effect: Effects
     ingredient: Ingredients
+    author: str = "Anonymous"
+    text: str = ""
+
+
+@dataclass
+class DullLowlanderCellStatus:
+    target_base: PotionBases
+    target_effect: Effects
+    ingredient: Ingredients
+    status: "DullLowlanderStatus | None" = None
+
+
+class DullLowlanderStatus(IntEnum):
+    NOT_PROMISING = 0
+    CHECKED = 1
+    UPDATING = 2
+    UNDER_TEST = 3
+    DOUBTFUL = 4
+    NORMAL = 5
+
+
+LOWLANDER_STATUS_RGB = {
+    "FFEA9999": DullLowlanderStatus.NOT_PROMISING,
+    "FFB6D7A8": DullLowlanderStatus.CHECKED,
+    "FFFF9900": DullLowlanderStatus.UPDATING,
+    "FF00FFFF": DullLowlanderStatus.UNDER_TEST,
+    "FF9FC5E8": DullLowlanderStatus.DOUBTFUL,
+    "FFA4C2F4": DullLowlanderStatus.DOUBTFUL,
+    "FFDBC4A0": DullLowlanderStatus.NORMAL,
+}
 
 
 @dataclass
