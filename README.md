@@ -12,9 +12,11 @@ Requires Python 3.10+.
 
 ```bash
 python -m pip install -U pip
-python -m pip install "git+https://github.com/wensty/openpyxl-image-loader"
 python -m pip install -e .
 ```
+
+`SheetImageLoader` is now vendored in `src/pytome/utility.py`, so no extra
+`openpyxl-image-loader` install step is needed.
 
 ## Run
 

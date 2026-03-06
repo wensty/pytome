@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import Union
 
 import openpyxl
-from openpyxl_image_loader import SheetImageLoader
 
 from .common import ASSET_DATA_DIR, effect_md5s
 from .effects import NUMBER_OF_EFFECTS, Effects
+from .utility import SheetImageLoader
 from .recipes import (
     Recipe,
     PotionBases,

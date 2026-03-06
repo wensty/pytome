@@ -5,7 +5,7 @@ import gzip
 import pickle
 
 import openpyxl
-from openpyxl_image_loader import SheetImageLoader
+from .utility import SheetImageLoader
 
 from .common import ASSET_DATA_DIR, effect_md5s
 
