@@ -42,6 +42,7 @@ class ProfitTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
 
         header = QtWidgets.QLabel("Profit Predictor")
+        header.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
         layout.addWidget(header)
 
         form = QtWidgets.QGridLayout()
@@ -183,6 +184,7 @@ class ProfitTab(QtWidgets.QWidget):
         output.addWidget(calc_btn)
         output.addStretch(1)
         layout.addLayout(output)
+        layout.addStretch(1)
 
         import_btn.clicked.connect(self._import_profit_recipe)
         max_trading_btn.clicked.connect(lambda: self.profit_trading.setText("20"))

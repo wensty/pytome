@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from PyQt6 import QtWidgets
+from pathlib import Path
+
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 
 class OptionsTab(QtWidgets.QWidget):
@@ -16,8 +18,10 @@ class OptionsTab(QtWidgets.QWidget):
         path_layout = QtWidgets.QGridLayout(path_box)
         self.external_data_path_edit = QtWidgets.QLineEdit(getattr(self.app, "external_data_path", ""))
         self.external_data_path_edit.setReadOnly(True)
+        open_path_btn = QtWidgets.QPushButton("Open Folder")
         path_layout.addWidget(QtWidgets.QLabel("External data path"), 0, 0)
         path_layout.addWidget(self.external_data_path_edit, 0, 1)
+        path_layout.addWidget(open_path_btn, 0, 2)
         layout.addWidget(path_box)
 
         box = QtWidgets.QGroupBox("Display")
@@ -30,6 +34,14 @@ class OptionsTab(QtWidgets.QWidget):
         layout.addStretch(1)
 
         self.icon_selectors.toggled.connect(self.app.set_use_icon_selectors)
+        open_path_btn.clicked.connect(self._open_external_data_path)
+
+    def _open_external_data_path(self) -> None:
+        path = Path(getattr(self.app, "external_data_path", "")).expanduser()
+        if not path.exists():
+            QtWidgets.QMessageBox.warning(self, "Open Folder", f"Directory not found:\n{path}")
+            return
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(path)))
 
     def apply_options(self) -> None:
         self.icon_selectors.blockSignals(True)

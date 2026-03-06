@@ -18,10 +18,12 @@ python -m pip install -e .
 `SheetImageLoader` is now vendored in `src/pytome/utility.py`, so no extra
 `openpyxl-image-loader` install step is needed.
 
+Initiating GUI with local enviornment is much faster than the one-file executable.
+
 ## Run
 
-- GUI: `python run.py`
-- CLI: `python query.py --help`
+- initiate GUI: `python run.py`
+- run CLI filter: `python query.py --help`
 
 ## CLI Examples
 

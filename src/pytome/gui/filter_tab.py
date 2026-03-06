@@ -1254,15 +1254,15 @@ class FilterTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
 
         top = QtWidgets.QHBoxLayout()
-        default_tome = Path(getattr(self.app, "external_data_path", "")).expanduser() / "tome.xlsx"
-        if not default_tome.exists():
-            default_tome = ASSET_DATA_DIR / "tome.xlsx"
-        self.tome_path_edit = QtWidgets.QLineEdit(str(default_tome))
+        self.tome_path_edit = QtWidgets.QLineEdit("")
+        self.tome_path_edit.setPlaceholderText("Leave empty to use bundled snapshot tome.xlsx")
         browse_btn = QtWidgets.QPushButton("Browse")
         init_btn = QtWidgets.QPushButton("Init from Tome")
+        init_hint = QtWidgets.QLabel("(leave empty = bundled snapshot)")
         top.addWidget(self.tome_path_edit)
         top.addWidget(browse_btn)
         top.addWidget(init_btn)
+        top.addWidget(init_hint)
         layout.addLayout(top)
 
         self.require_effects = QtWidgets.QLineEdit()

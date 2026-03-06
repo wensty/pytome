@@ -35,7 +35,7 @@ class TomeApp(QtWidgets.QMainWindow):
         customer_tab = CustomerTab(self)
         dull_lowlander_tab = DullLowlanderTab(self)
         options_tab = OptionsTab(self)
-        tabs.addTab(filter_tab, "Filter")
+        tabs.addTab(filter_tab, "Query")
         tabs.addTab(profit_tab, "Profit")
         tabs.addTab(compatibility_tab, "Compatibility")
         tabs.addTab(customer_tab, "Customers")
