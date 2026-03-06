@@ -9,13 +9,8 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os }} build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-        python-version: ["3.12"]
+    name: windows-latest build
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -24,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
@@ -33,35 +28,20 @@ jobs:
           python -m pip install -e .
           python -m pip install pyinstaller
 
-      - name: Build with PyInstaller
+      - name: Build with PyInstaller (Windows)
+        shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --windowed --name pyTome --collect-data pytome run.py
-
-      - name: Validate build output (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          test -d "dist/pyTome.app"
+          pyinstaller --noconfirm --clean --windowed --name pyTome --paths src --add-data "src/pytome/data;pytome/data" run.py
 
       - name: Validate build output (Windows)
-        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           if (-not (Test-Path "dist/pyTome/pyTome.exe")) { throw "dist/pyTome/pyTome.exe not found" }
 
-      - name: Upload build artifact (macOS)
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: pyTome-${{ runner.os }}
-          path: dist/pyTome.app
-          if-no-files-found: error
-
       - name: Upload build artifact (Windows)
-        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: pyTome-${{ runner.os }}
+          name: pyTome-Windows
           path: dist/pyTome
           if-no-files-found: error
 
@@ -74,12 +54,6 @@ jobs:
       contents: write
 
     steps:
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pyTome-macOS
-          path: release-assets/macos
-
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
@@ -90,9 +64,6 @@ jobs:
         shell: bash
         run: |
           cd release-assets
-          if [ -d "macos/pyTome.app" ]; then
-            zip -r pyTome-macOS.zip macos/pyTome.app
-          fi
           if [ -d "windows/pyTome" ]; then
             zip -r pyTome-Windows.zip windows/pyTome
           fi
@@ -101,5 +72,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release-assets/pyTome-macOS.zip
             release-assets/pyTome-Windows.zip

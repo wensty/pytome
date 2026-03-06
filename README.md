@@ -25,6 +25,19 @@ Initiating GUI with local enviornment is much faster than the one-file executabl
 - initiate GUI: `python run.py`
 - run CLI filter: `python query.py --help`
 
+## Build
+
+```bash
+pyinstaller --noconfirm --clean --windowed --name pyTome --paths src --add-data "src/pytome/data:pytome/data" run.py
+```
+
+### Build on Windows (local)
+
+```powershell
+pyinstaller --noconfirm --clean --windowed --name pyTome --paths src --add-data "src/pytome/data;pytome/data" run.py
+.\dist\pyTome\pyTome.exe
+```
+
 ## CLI Examples
 
 ```bash

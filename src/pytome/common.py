@@ -9,7 +9,19 @@ import openpyxl
 from .utility import SheetImageLoader
 
 
-PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
+def _resolve_asset_data_dir() -> Path:
+    module_data = Path(__file__).resolve().parent / "data"
+    if not getattr(sys, "frozen", False):
+        return module_data
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        bundled_data = Path(meipass) / "pytome" / "data"
+        if bundled_data.exists():
+            return bundled_data
+    return module_data
+
+
+PACKAGE_DATA_DIR = _resolve_asset_data_dir()
 
 
 def _resolve_user_data_dir(app_name: str) -> Path:
@@ -20,6 +32,7 @@ def _resolve_user_data_dir(app_name: str) -> Path:
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
     return base / app_name
+
 
 # Always load assets from the package; databases live outside the package.
 ASSET_DATA_DIR = PACKAGE_DATA_DIR
@@ -226,7 +239,6 @@ def _load_effect_md5s() -> dict[str, int]:
         return update_icon_md5()
     with gzip.open(ICON_MD5_PATH, "rb") as f:
         return pickle.load(f)
-
 
 
 effect_md5s = _load_effect_md5s()
