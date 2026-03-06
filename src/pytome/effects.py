@@ -7,7 +7,7 @@ import pickle
 import openpyxl
 from .utility import SheetImageLoader
 
-from .common import ASSET_DATA_DIR, effect_md5s
+from .common import ASSET_DATA_DIR, CACHE_DATA_DIR, effect_md5s
 
 NUMBER_OF_EFFECTS = 41
 
@@ -151,7 +151,7 @@ _effect_types = [
 ]
 
 
-COMPATIBILITY_PATH = ASSET_DATA_DIR / "Compatibility.pkl.gz"
+COMPATIBILITY_PATH = CACHE_DATA_DIR / "Compatibility.pkl.gz"
 
 
 def read_tome_effect_compatibilties() -> list[list[int]]:
@@ -175,6 +175,7 @@ def read_tome_effect_compatibilties() -> list[list[int]]:
             value = page.cell(i + 4, j + 4).value
             _compatibilitie_matrix[main_effect][secondary_effect] = int(value) if isinstance(value, float) else -1
 
+    COMPATIBILITY_PATH.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(COMPATIBILITY_PATH, "wb") as f:
         pickle.dump(_compatibilitie_matrix, f)
     return _compatibilitie_matrix

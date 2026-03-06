@@ -1,19 +1,31 @@
 from pathlib import Path
 from hashlib import md5
 import gzip
+import os
 import pickle
+import sys
 
 import openpyxl
 from .utility import SheetImageLoader
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ROOT_DATA_DIR = PROJECT_ROOT / "data"
 PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
+
+
+def _resolve_user_data_dir(app_name: str) -> Path:
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or (Path.home() / "AppData" / "Local"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share")))
+    return base / app_name
 
 # Always load assets from the package; databases live outside the package.
 ASSET_DATA_DIR = PACKAGE_DATA_DIR
-DB_DATA_DIR = ROOT_DATA_DIR
+CACHE_DATA_DIR = _resolve_user_data_dir("pyTome")
+DB_DATA_DIR = CACHE_DATA_DIR
+CACHE_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 EXAMPLE_EFFECT_ICON_ROWS_SALTY_SKIRT = [
     166,
@@ -176,7 +188,7 @@ EXAMPLE_DULL_LOWLANDER_STATUS_ROWS = [
 EXAMPLE_DULL_LOWLANDER_STATUS_COLS = [5, 5, 8, 12]
 
 
-ICON_MD5_PATH = ASSET_DATA_DIR / "iconMD5s.pkl.gz"
+ICON_MD5_PATH = CACHE_DATA_DIR / "iconMD5s.pkl.gz"
 
 
 def read_icon_md5() -> dict[str, int]:
@@ -203,6 +215,7 @@ def read_icon_md5() -> dict[str, int]:
 
 def update_icon_md5() -> dict[str, int]:
     icon_md5 = read_icon_md5()
+    ICON_MD5_PATH.parent.mkdir(parents=True, exist_ok=True)
     with gzip.open(ICON_MD5_PATH, "wb") as f:
         pickle.dump(icon_md5, f)
     return icon_md5

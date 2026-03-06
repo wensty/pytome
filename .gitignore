@@ -6,3 +6,6 @@ data/pics
 data/icons
 _t.py
 *.egg-info
+build
+dist
+run.spec

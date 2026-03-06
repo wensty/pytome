@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PyQt6 import QtWidgets
 
-from ..common import DB_DATA_DIR
+from ..common import CACHE_DATA_DIR, DB_DATA_DIR
 from .compatibility_tab import CompatibilityTab
 from .customer_tab import CustomerTab
 from .dull_lowlander_tab import DullLowlanderTab
@@ -22,7 +22,7 @@ class TomeApp(QtWidgets.QMainWindow):
         self.resize(1200, 900)
 
         self.db_path = str(DB_DATA_DIR / "tome.sqlite3")
-        self.external_data_path = str(Path(self.db_path).parent)
+        self.external_data_path = str(CACHE_DATA_DIR)
         self.last_results = []
         self.use_icon_selectors = True
         self._option_listeners: list[object] = []
@@ -80,9 +80,6 @@ class TomeApp(QtWidgets.QMainWindow):
         self.use_icon_selectors = bool(enabled)
         self._save_options_to_file()
         self._notify_option_listeners()
-
-    def set_external_data_path(self, value: str) -> None:
-        self.external_data_path = value.strip()
 
     def set_db_path(self, value: str) -> None:
         value = value.strip()

@@ -38,5 +38,8 @@ python query.py filter --effect-range "Healing:1-3" --ingredient-range "Lifeleaf
 
 ## Data
 
-- Package assets are bundled under `src/pytome/data/` (icons, compatibility, etc.).
-- The SQLite database defaults to `data/tome.sqlite3` in the project root.
+- Package assets are bundled under `src/pytome/data/` (icons and snapshot of tome file in xlsx).
+- External runtime data defaults to the user data directory (platform-specific),
+  including `tome.sqlite3` and cache files.
+- Local cache files (`Compatibility.pkl.gz`, `iconMD5s.pkl.gz`) are generated in
+  the current user's data directory (platform-specific), not in package data.
