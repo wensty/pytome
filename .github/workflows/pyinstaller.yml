@@ -35,28 +35,26 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name pyTome --collect-data pytome run.py
+          pyinstaller --noconfirm --clean --windowed --name pyTome --collect-data pytome run.py
 
       - name: Validate build output (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          test -f "dist/pyTome"
+          test -d "dist/pyTome.app"
 
       - name: Validate build output (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if ((Test-Path "dist/pyTome.exe")) { exit 0 }
-          if ((Test-Path "dist/pyTome/pyTome.exe")) { exit 0 }
-          throw "Windows executable not found in dist/pyTome.exe or dist/pyTome/pyTome.exe"
+          if (-not (Test-Path "dist/pyTome/pyTome.exe")) { throw "dist/pyTome/pyTome.exe not found" }
 
       - name: Upload build artifact (macOS)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: pyTome-${{ runner.os }}
-          path: dist/pyTome
+          path: dist/pyTome.app
           if-no-files-found: error
 
       - name: Upload build artifact (Windows)
@@ -64,9 +62,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pyTome-${{ runner.os }}
-          path: |
-            dist/pyTome.exe
-            dist/pyTome/pyTome.exe
+          path: dist/pyTome
           if-no-files-found: error
 
   release:
@@ -94,12 +90,11 @@ jobs:
         shell: bash
         run: |
           cd release-assets
-          if [ -f "macos/pyTome" ]; then
-            zip -j pyTome-macOS.zip macos/pyTome
+          if [ -d "macos/pyTome.app" ]; then
+            zip -r pyTome-macOS.zip macos/pyTome.app
           fi
-          windows_exe="$(find windows -type f -name 'pyTome.exe' | head -n 1)"
-          if [ -n "$windows_exe" ]; then
-            zip -j pyTome-Windows.zip "$windows_exe"
+          if [ -d "windows/pyTome" ]; then
+            zip -r pyTome-Windows.zip windows/pyTome
           fi
 
       - name: Publish release
