@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - master
       - dev
     tags:
       - "v*"
@@ -39,27 +38,38 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          pyinstaller --noconfirm --clean --windowed --name pyTome --collect-data pytome run.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name pyTome --collect-data pytome run.py
 
       - name: Validate build output (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          test -d "dist/pyTome.app"
+          test -f "dist/pyTome"
 
       - name: Validate build output (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist/pyTome.exe")) { throw "dist/pyTome.exe not found" }
+          if ((Test-Path "dist/pyTome.exe")) { exit 0 }
+          if ((Test-Path "dist/pyTome/pyTome.exe")) { exit 0 }
+          throw "Windows executable not found in dist/pyTome.exe or dist/pyTome/pyTome.exe"
 
-      - name: Upload build artifact
+      - name: Upload build artifact (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyTome-${{ runner.os }}
+          path: dist/pyTome
+          if-no-files-found: error
+
+      - name: Upload build artifact (Windows)
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: pyTome-${{ runner.os }}
           path: |
-            dist/pyTome.app
             dist/pyTome.exe
+            dist/pyTome/pyTome.exe
           if-no-files-found: error
 
   release:
@@ -87,11 +97,12 @@ jobs:
         shell: bash
         run: |
           cd release-assets
-          if [ -d "macos/pyTome.app" ]; then
-            zip -r pyTome-macOS.zip macos/pyTome.app
+          if [ -f "macos/pyTome" ]; then
+            zip -j pyTome-macOS.zip macos/pyTome
           fi
-          if [ -f "windows/pyTome.exe" ]; then
-            zip -j pyTome-Windows.zip windows/pyTome.exe
+          windows_exe="$(find windows -type f -name 'pyTome.exe' | head -n 1)"
+          if [ -n "$windows_exe" ]; then
+            zip -j pyTome-Windows.zip "$windows_exe"
           fi
 
       - name: Publish release
