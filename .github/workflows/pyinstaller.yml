@@ -38,11 +38,18 @@ jobs:
         run: |
           if (-not (Test-Path "dist/pyTome/pyTome.exe")) { throw "dist/pyTome/pyTome.exe not found" }
 
+      - name: Package build artifact (Windows)
+        shell: pwsh
+        run: |
+          if (Test-Path "release-assets") { Remove-Item -Recurse -Force "release-assets" }
+          New-Item -ItemType Directory -Path "release-assets" | Out-Null
+          Compress-Archive -Path "dist/pyTome/*" -DestinationPath "release-assets/pyTome-Windows.zip"
+
       - name: Upload build artifact (Windows)
         uses: actions/upload-artifact@v4
         with:
           name: pyTome-Windows
-          path: dist/pyTome
+          path: release-assets/pyTome-Windows.zip
           if-no-files-found: error
 
   release:
@@ -58,15 +65,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: pyTome-Windows
-          path: release-assets/windows
-
-      - name: Archive artifacts
-        shell: bash
-        run: |
-          cd release-assets
-          if [ -d "windows/pyTome" ]; then
-            zip -r pyTome-Windows.zip windows/pyTome
-          fi
+          path: release-assets
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
