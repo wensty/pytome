@@ -111,9 +111,9 @@ Rubedo = [
 
 PhiloStone = [
     PhiloStone_4,
-    VoidSalt_2,  # same recipe.
+    VoidSalt_1,  # same recipe.
     PhiloStone_2,
-    PhiloSalt_5,
+    PhiloStone_5,
     PhiloStone_3,
     PhiloStone_1,
     SingleEffect.StrongCurse,
