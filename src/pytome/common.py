@@ -204,6 +204,12 @@ EXAMPLE_DULL_LOWLANDER_STATUS_COLS = [5, 5, 8, 12]
 ICON_MD5_PATH = CACHE_DATA_DIR / "iconMD5s.pkl.gz"
 
 
+SALT_BATCH_SIZES = [5000, 5000, 10000, 2500, 2500]
+SALT_MASTERY_MULT = 3
+BATCH_PRODUCTION_RATE = 5
+BATCH_PRODUCTION_COST_RATE = 0.5
+
+
 def read_icon_md5() -> dict[str, int]:
     tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
     tome_salty_skirt = tome["Salty Skirt"]
