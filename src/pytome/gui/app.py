@@ -13,6 +13,7 @@ from .dull_lowlander_tab import DullLowlanderTab
 from .filter_tab import FilterTab
 from .options_tab import OptionsTab
 from .profit_tab import ProfitTab
+from .salty_skirt_tab import SaltySkirtTab
 
 
 class TomeApp(QtWidgets.QMainWindow):
@@ -34,16 +35,18 @@ class TomeApp(QtWidgets.QMainWindow):
         compatibility_tab = CompatibilityTab(self)
         customer_tab = CustomerTab(self)
         dull_lowlander_tab = DullLowlanderTab(self)
+        salty_skirt_tab = SaltySkirtTab(self)
         options_tab = OptionsTab(self)
         tabs.addTab(filter_tab, "Query")
         tabs.addTab(profit_tab, "Profit")
         tabs.addTab(compatibility_tab, "Compatibility")
         tabs.addTab(customer_tab, "Customers")
         tabs.addTab(dull_lowlander_tab, "Dull Lowlander")
+        tabs.addTab(salty_skirt_tab, "Salty Skirt")
         options_idx = tabs.addTab(options_tab, "Options")
         tabs.setCurrentIndex(options_idx)
         self.setCentralWidget(tabs)
-        self._option_listeners = [filter_tab, profit_tab, customer_tab, dull_lowlander_tab, options_tab]
+        self._option_listeners = [filter_tab, profit_tab, customer_tab, dull_lowlander_tab, salty_skirt_tab, options_tab]
         self._notify_option_listeners()
 
     def _notify_option_listeners(self) -> None:

@@ -845,14 +845,15 @@ class DullLowlanderTab(QtWidgets.QWidget):
         col_count = len(ingredient_list)
         self.top_header_table.setRowCount(1)
         self.top_header_table.setColumnCount(col_count)
+        self.top_header_table.setRowHeight(0, self._cell_px + 8)
         self.left_header_table.setRowCount(row_count)
         self.left_header_table.setColumnCount(1)
         self.body_table.setRowCount(row_count)
         self.body_table.setColumnCount(col_count)
 
-        self.top_header_table.setFixedHeight(self._cell_px + 6)
+        self.top_header_table.setFixedHeight(self._cell_px + 12)
         self.left_header_table.setFixedWidth(self._left_header_px + 6)
-        self.legend_btn.setFixedSize(self._left_header_px + 6, self._cell_px + 6)
+        self.legend_btn.setFixedSize(self._left_header_px + 6, self._cell_px + 12)
 
         for col, ingredient in enumerate(ingredient_list):
             self.top_header_table.setColumnWidth(col, self._cell_px + 2)

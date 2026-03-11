@@ -5,6 +5,7 @@ This is a python tome for Potion Craft. Currently support:
 - recipe filtering.
 - Profit calculating.
 - customer browsing.
+- salt optimization (Salty Skirt).
 
 ## Install
 
@@ -17,13 +18,16 @@ python -m pip install -e .
 
 `SheetImageLoader` is now vendored in `src/pytome/utility.py`, so no extra
 `openpyxl-image-loader` install step is needed.
+`Salty Skirt` optimization uses `PySCIPOpt` (SCIP backend).
 
-Initiating GUI with local enviornment is much faster than the one-file executable.
+Initiating GUI with local environment is much faster than the one-file executable.
 
 ## Run
 
 - initiate GUI: `python run.py`
 - run CLI filter: `python query.py --help`
+- open `Salty Skirt` tab to solve optimal salt recipes.
+  - the optimization unit scale is handled internally (no fixed `1000` input needed).
 
 ## Build
 
