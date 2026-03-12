@@ -224,5 +224,5 @@ LEGENDARY_SALT_SUBSTANCES: dict[str, LegendarySubstance] = {
 }
 
 
-def get_legendary_salt_requirements() -> dict[str, list[LegendaryComponent]]:
+def get_legendary_salt_components() -> dict[str, list[LegendaryComponent]]:
     return {salt_key: substance.get_legendary_components() for salt_key, substance in LEGENDARY_SALT_SUBSTANCES.items()}

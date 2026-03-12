@@ -190,24 +190,40 @@ EXAMPLE_INGREDIENT_ICON_COLS = [
 ]
 
 EXAMPLE_SALT_ICON_COLS = ["T", "V", "X", "Z", "AB"]
-
 EXAMPLE_DULL_LOWLANDER_STATUS_ROWS = [
     8,
     4,
     12,
     30,
 ]
-
 EXAMPLE_DULL_LOWLANDER_STATUS_COLS = [5, 5, 8, 12]
+EXAMPLE_ELEMENT_COLOR_COLS = ["O", "V", "AC", "AJ", "AQ", "AX", "BE", "BL", "BX"]
+
+ELEMENT_COLOR_PATH = CACHE_DATA_DIR / "ElementColors.pkl.gz"
 
 
-ICON_MD5_PATH = CACHE_DATA_DIR / "iconMD5s.pkl.gz"
+def read_element_colors() -> list[str]:
+    if not ELEMENT_COLOR_PATH.exists():
+        return update_element_colors()
+    with gzip.open(ELEMENT_COLOR_PATH, "rb") as f:
+        return pickle.load(f)
+
+
+def update_element_colors() -> list[str]:
+    tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
+    page = tome["Salty X (Gold cost, under test)"]
+    element_colors = []
+    for col in EXAMPLE_ELEMENT_COLOR_COLS:
+        element_colors.append(page[f"{col}9"].fill.fgColor.rgb)
+    return element_colors
 
 
 SALT_BATCH_SIZES = [5000, 5000, 10000, 2500, 2500]
 SALT_MASTERY_MULT = 3
 BATCH_PRODUCTION_RATE = 5
 BATCH_PRODUCTION_COST_RATE = 0.5
+
+ICON_MD5_PATH = CACHE_DATA_DIR / "iconMD5s.pkl.gz"
 
 
 def read_icon_md5() -> dict[str, int]:
@@ -250,4 +266,7 @@ def _load_effect_md5s() -> dict[str, int]:
 effect_md5s = _load_effect_md5s()
 
 if __name__ == "__main__":
-    pass
+    tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
+    page = tome["Salty X (Gold cost, under test)"]
+    for col in EXAMPLE_ELEMENT_COLOR_COLS:
+        print(page[f"{col}9"].fill.fgColor.rgb)

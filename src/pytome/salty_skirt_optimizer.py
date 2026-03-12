@@ -9,7 +9,7 @@ import pickle
 
 from .common import BATCH_PRODUCTION_COST_RATE, BATCH_PRODUCTION_RATE, SALT_BATCH_SIZES, SALT_MASTERY_MULT
 from .ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS, Salts
-from .legendary import LegendaryComponent, get_legendary_salt_requirements
+from .legendary import LegendaryComponent, get_legendary_salt_components
 from .recipe_database import load_recipes
 from .recipes import Potion, Recipe
 
@@ -63,7 +63,7 @@ def _sum_salts(recipe: Recipe) -> int:
 
 
 def _build_requirement_pool() -> dict[Salts, list[LegendaryComponent]]:
-    grouped = get_legendary_salt_requirements()
+    grouped = get_legendary_salt_components()
     return {
         Salts.Void: list(grouped["Void"]),
         Salts.Moon: list(grouped["Moon"]),
