@@ -1,3 +1,9 @@
+"""
+Common data and functions for the pyTome project.
+
+Some vulnerable tome reading functions are implemented here.
+"""
+
 from pathlib import Path
 from hashlib import md5
 import gzip
@@ -199,10 +205,16 @@ EXAMPLE_DULL_LOWLANDER_STATUS_ROWS = [
 EXAMPLE_DULL_LOWLANDER_STATUS_COLS = [5, 5, 8, 12]
 EXAMPLE_ELEMENT_COLOR_COLS = ["O", "V", "AC", "AJ", "AQ", "AX", "BE", "BL", "BX"]
 
+SALT_BATCH_SIZES = [5000, 5000, 10000, 2500, 2500]
+SALT_MASTERY_MULT = 3
+BATCH_PRODUCTION_RATE = 5
+BATCH_PRODUCTION_COST_RATE = 0.5
+
+
 ELEMENT_COLOR_PATH = CACHE_DATA_DIR / "ElementColors.pkl.gz"
 
 
-def read_element_colors() -> list[str]:
+def get_element_colors() -> list[str]:
     if not ELEMENT_COLOR_PATH.exists():
         return update_element_colors()
     with gzip.open(ELEMENT_COLOR_PATH, "rb") as f:
@@ -210,18 +222,20 @@ def read_element_colors() -> list[str]:
 
 
 def update_element_colors() -> list[str]:
+    # read the element colors from the tome.xlsx file from assets.
     tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
     page = tome["Salty X (Gold cost, under test)"]
     element_colors = []
     for col in EXAMPLE_ELEMENT_COLOR_COLS:
         element_colors.append(page[f"{col}9"].fill.fgColor.rgb)
+    # save the element colors to the cache directory.
+    ELEMENT_COLOR_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(ELEMENT_COLOR_PATH, "wb") as f:
+        pickle.dump(element_colors, f)
     return element_colors
 
 
-SALT_BATCH_SIZES = [5000, 5000, 10000, 2500, 2500]
-SALT_MASTERY_MULT = 3
-BATCH_PRODUCTION_RATE = 5
-BATCH_PRODUCTION_COST_RATE = 0.5
+element_colors = get_element_colors()
 
 ICON_MD5_PATH = CACHE_DATA_DIR / "iconMD5s.pkl.gz"
 
@@ -256,17 +270,14 @@ def update_icon_md5() -> dict[str, int]:
     return icon_md5
 
 
-def _load_effect_md5s() -> dict[str, int]:
+def get_effect_md5s() -> dict[str, int]:
     if not ICON_MD5_PATH.exists():
         return update_icon_md5()
     with gzip.open(ICON_MD5_PATH, "rb") as f:
         return pickle.load(f)
 
 
-effect_md5s = _load_effect_md5s()
+effect_md5s = get_effect_md5s()
 
 if __name__ == "__main__":
-    tome = openpyxl.open(ASSET_DATA_DIR / "tome.xlsx", data_only=True)
-    page = tome["Salty X (Gold cost, under test)"]
-    for col in EXAMPLE_ELEMENT_COLOR_COLS:
-        print(page[f"{col}9"].fill.fgColor.rgb)
+    print(element_colors)

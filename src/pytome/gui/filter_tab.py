@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..common import ASSET_DATA_DIR
+from ..common import ASSET_DATA_DIR, element_colors
 from ..effects import Effects, PotionBases
 from ..ingredients import Ingredients, Salts
 from ..recipe_database import (
@@ -189,10 +189,19 @@ def filter_recipes(
 
 
 class GroupSeparatorDelegate(QtWidgets.QStyledItemDelegate):
-    def __init__(self, boundaries: set[int], width: int, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(
+        self,
+        boundaries: set[int],
+        width: int,
+        emphasized_boundaries: set[int] | None = None,
+        emphasized_width: int = 4,
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._boundaries = boundaries
         self._width = width
+        self._emphasized_boundaries = emphasized_boundaries or set()
+        self._emphasized_width = emphasized_width
 
     def paint(
         self,
@@ -206,7 +215,8 @@ class GroupSeparatorDelegate(QtWidgets.QStyledItemDelegate):
         if index.column() not in self._boundaries:
             return
         painter.save()
-        pen = QtGui.QPen(QtGui.QColor("#8a8a8a"), self._width)
+        width = self._emphasized_width if index.column() in self._emphasized_boundaries else self._width
+        pen = QtGui.QPen(QtGui.QColor("#1f1f1f"), width)
         painter.setPen(pen)
         right = option.rect.right()
         painter.drawLine(right, option.rect.top(), right, option.rect.bottom())
@@ -663,6 +673,7 @@ class RecipeIconWindow(QtWidgets.QDialog):
         recipes: list[Recipe],
         icon_cache: IconCache,
         page_size: int,
+        icon_px: int,
         comments_by_hash: dict[str, list[RecipeCommentRecord]] | None = None,
         links_by_hash: dict[str, list[RecipeLinkRecord]] | None = None,
     ) -> None:
@@ -682,10 +693,11 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.comments_by_hash = comments_by_hash or {}
         self.links_by_hash = links_by_hash or {}
 
-        self.icon_size = 36
-        self.effect_icon_size = 36
-        self.salt_icon_size = 36
-        self.header_icon_size = 36
+        base_px = max(12, min(96, int(icon_px)))
+        self.icon_size = base_px
+        self.effect_icon_size = base_px
+        self.salt_icon_size = base_px
+        self.header_icon_size = base_px
         self.separator_width = 2
         self.id_col_width = 50
         self.base_col_width = self.icon_size + 12
@@ -693,11 +705,15 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.comment_col_width = 160
         self.ingredient_cell_px = self.header_icon_size + 6
         self.ingredients_col_width = self.ingredient_cell_px * len(Ingredients)
-        self.salt_cell_px = max(self.header_icon_size + 6, 60)
+        self.salt_cell_px = max(self.header_icon_size + 6, 76)
         self.salts_col_width = self.salt_cell_px * len(Salts)
         self.links_col_width = 180
         self.actions_col_width = 190
         self.row_height = max(self.effect_icon_size, self.salt_icon_size, self.icon_size) + 12
+        self.value_font = QtGui.QFont(self.font())
+        self.value_font.setPointSize(max(self.value_font.pointSize() + 2, 11))
+        self._ingredient_column_colors = self._build_ingredient_column_colors()
+        self._ingredient_boundary_cols: set[int] = set()
 
         layout = QtWidgets.QVBoxLayout(self)
         grid = QtWidgets.QGridLayout()
@@ -716,6 +732,7 @@ class RecipeIconWindow(QtWidgets.QDialog):
             table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
             table.setShowGrid(True)
             table.setAlternatingRowColors(False)
+            table.setStyleSheet("QTableWidget { gridline-color: #8f8f8f; }")
 
         for table in (self.left_header_table, self.right_header_table):
             table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -836,14 +853,52 @@ class RecipeIconWindow(QtWidgets.QDialog):
             boundary_cols.add(group_end - 1)
         if len(Ingredients) > 56:
             boundary_cols.add(55)
+        self._ingredient_boundary_cols = set(boundary_cols)
+        main_boundary_cols = {len(Ingredients) - 1}
         boundary_cols.add(len(Ingredients) - 1)
         boundary_cols.add(len(Ingredients) + len(Salts) - 1)
-        delegate = GroupSeparatorDelegate(boundary_cols, self.separator_width, self.right_table)
+        delegate = GroupSeparatorDelegate(
+            boundary_cols,
+            self.separator_width,
+            emphasized_boundaries=main_boundary_cols,
+            emphasized_width=max(3, self.separator_width + 2),
+            parent=self.right_table,
+        )
         self.right_table.setItemDelegate(delegate)
-        header_delegate = GroupSeparatorDelegate(boundary_cols, self.separator_width, self.right_header_table)
+        header_delegate = GroupSeparatorDelegate(
+            boundary_cols,
+            self.separator_width,
+            emphasized_boundaries=main_boundary_cols,
+            emphasized_width=max(3, self.separator_width + 2),
+            parent=self.right_header_table,
+        )
         self.right_header_table.setItemDelegate(header_delegate)
 
         self._build_header_row()
+
+    @staticmethod
+    def _argb_to_qcolor(argb: str | None) -> QtGui.QColor:
+        raw = (argb or "").strip().upper()
+        if len(raw) != 8:
+            return QtGui.QColor()
+        try:
+            alpha = int(raw[0:2], 16)
+            red = int(raw[2:4], 16)
+            green = int(raw[4:6], 16)
+            blue = int(raw[6:8], 16)
+        except ValueError:
+            return QtGui.QColor()
+        return QtGui.QColor(red, green, blue, alpha)
+
+    def _build_ingredient_column_colors(self) -> list[QtGui.QColor]:
+        parsed = [self._argb_to_qcolor(item) for item in element_colors]
+        if not parsed:
+            return [QtGui.QColor() for _ in Ingredients]
+        colors: list[QtGui.QColor] = []
+        for idx, _ingredient in enumerate(Ingredients):
+            group_idx = min(idx // 7, len(parsed) - 1)
+            colors.append(parsed[group_idx])
+        return colors
 
     def _build_header_row(self) -> None:
         font = self.font()
@@ -871,7 +926,19 @@ class RecipeIconWindow(QtWidgets.QDialog):
         col = 0
         for ingredient in Ingredients:
             pixmap = self.icon_cache.pixmap("ingredients", ingredient.ingredient_name, self.header_icon_size)
-            self.right_header_table.setCellWidget(0, col, _icon_label(pixmap, ingredient.ingredient_name))
+            label = _icon_label(pixmap, ingredient.ingredient_name)
+            styles: list[str] = []
+            if col < len(self._ingredient_column_colors):
+                bg = self._ingredient_column_colors[col]
+                if bg.isValid():
+                    styles.append(f"background-color: rgba({bg.red()}, {bg.green()}, {bg.blue()}, {max(48, bg.alpha())});")
+            if col == len(Ingredients) - 1:
+                styles.append("border-right: 3px solid #1f1f1f;")
+            if col in self._ingredient_boundary_cols:
+                styles.append("border-right: 2px solid #1f1f1f;")
+            if styles:
+                label.setStyleSheet(" ".join(styles))
+            self.right_header_table.setCellWidget(0, col, label)
             col += 1
         for salt in Salts:
             pixmap = self.icon_cache.pixmap("salts", salt.salt_name, self.header_icon_size)
@@ -982,68 +1049,38 @@ class RecipeIconWindow(QtWidgets.QDialog):
     def _build_effects_widget(self, recipe: Recipe) -> QtWidgets.QWidget:
         effects = [(Effects(i).effect_name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0]
         effects = sorted(effects, key=lambda item: (-item[1], item[0]))
-        total_tiers = sum(tier for _name, tier in effects)
-        if total_tiers == 0:
+        if not effects:
             return QtWidgets.QWidget()
-        if recipe.is_exact_recipe:
-            icon_px = self.effect_icon_size
-        else:
-            scale = min(1.0, 5 / max(1, total_tiers))
-            icon_px = max(12, int(self.effect_icon_size * max(scale, 0.5)))
-        total_icons = total_tiers
-        icons_per_row = 1
-        for _ in range(2):
-            icons_per_row = max(1, min(total_icons, self.effects_col_width // max(1, icon_px + 2)))
-            rows = (total_icons + icons_per_row - 1) // icons_per_row
-            max_icon_px = max(12, (self.row_height - 4) // max(1, rows) - 2)
-            max_width_px = max(12, (self.effects_col_width // max(1, icons_per_row)) - 2)
-            icon_px = min(icon_px, max_icon_px, max_width_px)
-
+        icon_px = self.effect_icon_size
         icon_names: list[tuple[str, str]] = []
         for name, tier in effects:
             icon_names.extend([("effects", name)] * tier)
-
-        total_icons = len(icon_names)
-        icons_per_row = max(1, min(total_icons, self.effects_col_width // max(1, icon_px + 4)))
-        max_rows = min(2, max(1, (self.row_height - 4) // max(1, icon_px + 2)))
-        max_icons = icons_per_row * max_rows
-
-        add_overflow = False
-        overflow = 0
-        if total_icons > max_icons and max_icons >= 2:
-            visible_icons = max_icons - 1
-            overflow = total_icons - visible_icons
-            icon_names = icon_names[:visible_icons]
-            add_overflow = True
-        elif total_icons > max_icons:
-            icon_names = icon_names[:1]
-            overflow = total_icons - 1
-
-        total_slots = len(icon_names) + (1 if add_overflow else 0)
-        icons_per_row = max(1, min(total_slots, self.effects_col_width // max(1, icon_px + 2)))
+        overflow = max(0, len(icon_names) - 5)
+        if overflow > 0:
+            icon_names = icon_names[:5]
 
         cell = QtWidgets.QWidget()
-        grid = QtWidgets.QGridLayout(cell)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(2)
-        grid.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        for idx, (folder, name) in enumerate(icon_names):
-            row_idx = idx // icons_per_row
-            col_idx = idx % icons_per_row
+        layout = QtWidgets.QHBoxLayout(cell)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        for folder, name in icon_names:
             icon = self.icon_cache.pixmap(folder, name, icon_px)
             label = QtWidgets.QLabel()
             if icon:
                 label.setPixmap(icon)
             label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            grid.addWidget(label, row_idx, col_idx)
+            layout.addWidget(label)
 
-        if add_overflow:
-            idx = len(icon_names)
-            row_idx = idx // icons_per_row
-            col_idx = idx % icons_per_row
+        if overflow > 0:
             label = QtWidgets.QLabel(f"+{overflow}")
+            label.setFixedWidth(28)
             label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            grid.addWidget(label, row_idx, col_idx)
+            font = label.font()
+            font.setPointSize(max(font.pointSize(), 10))
+            font.setBold(True)
+            label.setFont(font)
+            layout.addWidget(label)
         return cell
 
     def _build_base_widget(self, recipe: Recipe) -> QtWidgets.QWidget:
@@ -1278,7 +1315,14 @@ class RecipeIconWindow(QtWidgets.QDialog):
                     if enabled:
                         item.setBackground(color)
                     else:
-                        item.setBackground(QtGui.QBrush())
+                        if table is self.right_table and 0 <= col < len(Ingredients):
+                            base = self._ingredient_column_colors[col] if col < len(self._ingredient_column_colors) else QtGui.QColor()
+                            if base.isValid():
+                                item.setBackground(base)
+                            else:
+                                item.setBackground(QtGui.QBrush())
+                        else:
+                            item.setBackground(QtGui.QBrush())
                 widget = table.cellWidget(row, col)
                 if widget is not None:
                     base_style = widget.property("baseStyle")
@@ -1331,12 +1375,18 @@ class RecipeIconWindow(QtWidgets.QDialog):
                 text = "" if value == 0 else str(int(value))
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                item.setFont(self.value_font)
+                if col < len(self._ingredient_column_colors):
+                    base = self._ingredient_column_colors[col]
+                    if base.isValid():
+                        item.setBackground(base)
                 self.right_table.setItem(row, col, item)
                 col += 1
             for value in recipe.salt_grain_list:
                 text = "" if value == 0 else str(int(value))
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                item.setFont(self.value_font)
                 self.right_table.setItem(row, col, item)
                 col += 1
             self.right_table.setCellWidget(row, col, self._build_action_widget(idx, recipe))
@@ -1377,13 +1427,17 @@ class FilterTab(QtWidgets.QWidget):
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(4)
 
         top = QtWidgets.QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(6)
         self.tome_path_edit = QtWidgets.QLineEdit("")
         self.tome_path_edit.setPlaceholderText("Leave empty to use bundled snapshot tome.xlsx")
         browse_btn = QtWidgets.QPushButton("Browse")
         init_btn = QtWidgets.QPushButton("Init from Tome")
         init_hint = QtWidgets.QLabel("(leave empty = bundled snapshot)")
+        self._top_row_widgets: list[QtWidgets.QWidget] = [self.tome_path_edit, browse_btn, init_btn, init_hint]
         top.addWidget(self.tome_path_edit)
         top.addWidget(browse_btn)
         top.addWidget(init_btn)
@@ -1404,10 +1458,11 @@ class FilterTab(QtWidgets.QWidget):
         self.not_base = QtWidgets.QLineEdit()
         self.lowlander = QtWidgets.QLineEdit()
         self.extra_effects_min = QtWidgets.QLineEdit()
-        self.page_size = QtWidgets.QLineEdit("15")
 
         range_box = QtWidgets.QGroupBox("Range Filter (only range restriction)")
         range_form = QtWidgets.QGridLayout(range_box)
+        range_form.setHorizontalSpacing(6)
+        range_form.setVerticalSpacing(3)
         range_form.addWidget(QtWidgets.QLabel("Effect ranges (Name:min-max)"), 0, 0)
         range_form.addWidget(self.effect_ranges, 0, 1)
         range_form.addWidget(QtWidgets.QLabel("Ingredient ranges (Name:min-max)"), 1, 0)
@@ -1417,42 +1472,65 @@ class FilterTab(QtWidgets.QWidget):
         range_form.addWidget(QtWidgets.QLabel("Allowed base list (comma)"), 3, 0)
         range_form.addWidget(self.base_list, 3, 1)
         range_checks = QtWidgets.QHBoxLayout()
+        self.hidden_filter = QtWidgets.QComboBox()
+        self.hidden_filter.addItems(["Any", "Yes", "No"])
+        self.hidden_filter.setCurrentText("No")
+        self.show_no_links = QtWidgets.QCheckBox("Show No-Link")
+        self.show_no_links.setChecked(False)
+        self.plotter_filter = QtWidgets.QComboBox()
+        self.plotter_filter.addItems(["Any", "Yes", "No"])
+        self.discord_filter = QtWidgets.QComboBox()
+        self.discord_filter.addItems(["Any", "Yes", "No"])
         range_checks.addWidget(self.range_exact_zero_ingredients)
         range_checks.addWidget(self.range_exact_zero_salts)
+        range_checks.addWidget(QtWidgets.QLabel("Hidden"))
+        range_checks.addWidget(self.hidden_filter)
+        range_checks.addWidget(self.show_no_links)
+        range_checks.addWidget(QtWidgets.QLabel("Plotter"))
+        range_checks.addWidget(self.plotter_filter)
+        range_checks.addWidget(QtWidgets.QLabel("Discord"))
+        range_checks.addWidget(self.discord_filter)
         range_checks.addStretch(1)
+        self._range_misc_layout = range_checks
         range_form.addLayout(range_checks, 4, 0, 1, 2)
-        range_form.addWidget(QtWidgets.QLabel("Icon page size"), 5, 0)
-        range_form.addWidget(self.page_size, 5, 1)
         layout.addWidget(range_box)
 
         requirement_box = QtWidgets.QGroupBox("Requirement Filter (customer constraints + reasonableness checks)")
         requirement_form = QtWidgets.QGridLayout(requirement_box)
+        requirement_form.setHorizontalSpacing(6)
+        requirement_form.setVerticalSpacing(3)
         requirement_form.addWidget(QtWidgets.QLabel("Required effects (comma)"), 0, 0)
-        requirement_form.addWidget(self.require_effects, 0, 1)
+        requirement_form.addWidget(self.require_effects, 0, 1, 1, 5)
+
         requirement_form.addWidget(QtWidgets.QLabel("Add ingredient (single)"), 1, 0)
         requirement_form.addWidget(self.ingredients, 1, 1)
-        requirement_form.addWidget(QtWidgets.QLabel("Exclude ingredient (single)"), 2, 0)
-        requirement_form.addWidget(self.no_ingredients, 2, 1)
-        requirement_form.addWidget(QtWidgets.QLabel("Half ingredient (single)"), 3, 0)
-        requirement_form.addWidget(self.half_ingredient, 3, 1)
-        requirement_form.addWidget(QtWidgets.QLabel("Required base (single)"), 4, 0)
-        requirement_form.addWidget(self.base, 4, 1)
-        requirement_form.addWidget(QtWidgets.QLabel("Excluded base (single)"), 5, 0)
-        requirement_form.addWidget(self.not_base, 5, 1)
-        requirement_form.addWidget(QtWidgets.QLabel("Lowlander (max count)"), 6, 0)
-        requirement_form.addWidget(self.lowlander, 6, 1)
-        requirement_form.addWidget(QtWidgets.QLabel("Extra effects min"), 7, 0)
-        requirement_form.addWidget(self.extra_effects_min, 7, 1)
+        requirement_form.addWidget(QtWidgets.QLabel("Exclude ingredient (single)"), 1, 2)
+        requirement_form.addWidget(self.no_ingredients, 1, 3)
+        requirement_form.addWidget(QtWidgets.QLabel("Half ingredient (single)"), 1, 4)
+        requirement_form.addWidget(self.half_ingredient, 1, 5)
+
+        requirement_form.addWidget(QtWidgets.QLabel("Required base (single)"), 2, 0)
+        requirement_form.addWidget(self.base, 2, 1)
+        requirement_form.addWidget(QtWidgets.QLabel("Excluded base (single)"), 2, 2)
+        requirement_form.addWidget(self.not_base, 2, 3)
+        requirement_form.addWidget(QtWidgets.QLabel("Lowlander (max count)"), 2, 4)
+        requirement_form.addWidget(self.lowlander, 2, 5)
+        requirement_form.setColumnStretch(1, 1)
+        requirement_form.setColumnStretch(3, 1)
+        requirement_form.setColumnStretch(5, 1)
         layout.addWidget(requirement_box)
 
         selectors = QtWidgets.QGroupBox("Selections")
         selectors_layout = QtWidgets.QGridLayout(selectors)
+        selectors_layout.setHorizontalSpacing(6)
+        selectors_layout.setVerticalSpacing(3)
         layout.addWidget(selectors)
 
         self.effect_select = QtWidgets.QComboBox()
         self.ingredient_select = QtWidgets.QComboBox()
-        self.ingredient_range_select = QtWidgets.QComboBox()
-        self.tier_effect_select = QtWidgets.QComboBox()
+        # Reuse selectors for both requirement and range operations.
+        self.ingredient_range_select = self.ingredient_select
+        self.tier_effect_select = self.effect_select
         self.tier_value = QtWidgets.QLineEdit("1")
         self.potion_select = QtWidgets.QComboBox()
         self.potion_select.setMaxVisibleItems(12)
@@ -1463,63 +1541,75 @@ class FilterTab(QtWidgets.QWidget):
         self.potion_select_view.setUniformItemSizes(False)
         self.potion_select.setView(self.potion_select_view)
         self._potion_defs = _collect_potion_defs()
+        range_hint_text = "Range (X-Y / X- / -Y / X)"
 
         selectors_layout.addWidget(QtWidgets.QLabel("Effect"), 0, 0)
         selectors_layout.addWidget(self.effect_select, 0, 1)
-        add_required_btn = QtWidgets.QPushButton("Add to Required Effects")
-        selectors_layout.addWidget(add_required_btn, 0, 3)
-
-        selectors_layout.addWidget(QtWidgets.QLabel("Effect Range"), 1, 0)
-        selectors_layout.addWidget(self.tier_effect_select, 1, 1)
-        selectors_layout.addWidget(QtWidgets.QLabel("X-Y"), 1, 2)
+        add_required_btn = QtWidgets.QPushButton("Add Required")
+        selectors_layout.addWidget(add_required_btn, 0, 2)
+        selectors_layout.addWidget(QtWidgets.QLabel(range_hint_text), 0, 3)
         self.effect_range_value = QtWidgets.QLineEdit()
-        selectors_layout.addWidget(self.effect_range_value, 1, 3)
-        set_effect_range_btn = QtWidgets.QPushButton("Set Effect Range")
-        selectors_layout.addWidget(set_effect_range_btn, 1, 4)
+        selectors_layout.addWidget(self.effect_range_value, 0, 4)
+        set_effect_range_btn = QtWidgets.QPushButton("Set Range")
+        selectors_layout.addWidget(set_effect_range_btn, 0, 5)
 
-        selectors_layout.addWidget(QtWidgets.QLabel("Ingredient Range"), 2, 0)
-        selectors_layout.addWidget(self.ingredient_range_select, 2, 1)
-        selectors_layout.addWidget(QtWidgets.QLabel("X-Y"), 2, 2)
+        selectors_layout.addWidget(QtWidgets.QLabel("Ingredient"), 1, 0)
+        selectors_layout.addWidget(self.ingredient_select, 1, 1)
+        add_ingredient_btn = QtWidgets.QPushButton("Add")
+        exclude_ingredient_btn = QtWidgets.QPushButton("Exclude")
+        half_ingredient_btn = QtWidgets.QPushButton("Half")
+        ingredient_actions = QtWidgets.QWidget()
+        ingredient_actions_layout = QtWidgets.QHBoxLayout(ingredient_actions)
+        ingredient_actions_layout.setContentsMargins(0, 0, 0, 0)
+        ingredient_actions_layout.setSpacing(4)
+        ingredient_actions_layout.addWidget(add_ingredient_btn)
+        ingredient_actions_layout.addWidget(exclude_ingredient_btn)
+        ingredient_actions_layout.addWidget(half_ingredient_btn)
+        ingredient_actions_layout.addStretch(1)
+        selectors_layout.addWidget(ingredient_actions, 1, 2)
+        selectors_layout.addWidget(QtWidgets.QLabel(range_hint_text), 1, 3)
         self.ingredient_range_value = QtWidgets.QLineEdit()
-        selectors_layout.addWidget(self.ingredient_range_value, 2, 3)
-        set_ingredient_range_btn = QtWidgets.QPushButton("Set Ingredient Range")
-        selectors_layout.addWidget(set_ingredient_range_btn, 2, 4)
+        selectors_layout.addWidget(self.ingredient_range_value, 1, 4)
+        set_ingredient_range_btn = QtWidgets.QPushButton("Set")
+        selectors_layout.addWidget(set_ingredient_range_btn, 1, 5)
 
-        selectors_layout.addWidget(QtWidgets.QLabel("Salt Range"), 3, 0)
+        selectors_layout.addWidget(QtWidgets.QLabel("Salt"), 2, 0)
         self.salt_range_select = QtWidgets.QComboBox()
         self.salt_range_select.addItems([salt.salt_name for salt in Salts])
-        selectors_layout.addWidget(self.salt_range_select, 3, 1)
-        selectors_layout.addWidget(QtWidgets.QLabel("X-Y"), 3, 2)
+        selectors_layout.addWidget(self.salt_range_select, 2, 1)
+        selectors_layout.addWidget(QtWidgets.QWidget(), 2, 2)
+        selectors_layout.addWidget(QtWidgets.QLabel(range_hint_text), 2, 3)
         self.salt_range_value = QtWidgets.QLineEdit()
-        selectors_layout.addWidget(self.salt_range_value, 3, 3)
-        set_salt_range_btn = QtWidgets.QPushButton("Set Salt Range")
-        selectors_layout.addWidget(set_salt_range_btn, 3, 4)
+        selectors_layout.addWidget(self.salt_range_value, 2, 4)
+        set_salt_range_btn = QtWidgets.QPushButton("Set Range")
+        selectors_layout.addWidget(set_salt_range_btn, 2, 5)
 
-        selectors_layout.addWidget(QtWidgets.QLabel("Ingredient"), 4, 0)
-        selectors_layout.addWidget(self.ingredient_select, 4, 1)
-        add_ingredient_btn = QtWidgets.QPushButton("Add to Ingredients")
-        exclude_ingredient_btn = QtWidgets.QPushButton("Exclude Ingredient")
-        half_ingredient_btn = QtWidgets.QPushButton("Half Ingredient")
-        selectors_layout.addWidget(add_ingredient_btn, 4, 2)
-        selectors_layout.addWidget(exclude_ingredient_btn, 4, 3)
-        selectors_layout.addWidget(half_ingredient_btn, 4, 4)
-
-        selectors_layout.addWidget(QtWidgets.QLabel("Base"), 5, 0)
+        selectors_layout.addWidget(QtWidgets.QLabel("Base"), 3, 0)
         self.base_select = QtWidgets.QComboBox()
-        selectors_layout.addWidget(self.base_select, 5, 1)
-        set_required_base_btn = QtWidgets.QPushButton("Set Required Base")
-        set_excluded_base_btn = QtWidgets.QPushButton("Set Excluded Base")
-        add_allowed_base_btn = QtWidgets.QPushButton("Add Allowed Base")
-        remove_allowed_base_btn = QtWidgets.QPushButton("Remove Allowed Base")
-        selectors_layout.addWidget(set_required_base_btn, 5, 2)
-        selectors_layout.addWidget(set_excluded_base_btn, 5, 3)
-        selectors_layout.addWidget(add_allowed_base_btn, 5, 4)
-        selectors_layout.addWidget(remove_allowed_base_btn, 5, 5)
+        selectors_layout.addWidget(self.base_select, 3, 1)
+        set_required_base_btn = QtWidgets.QPushButton("Set Required")
+        set_excluded_base_btn = QtWidgets.QPushButton("Set Excluded")
+        add_allowed_base_btn = QtWidgets.QPushButton("Add Allowed")
+        remove_allowed_base_btn = QtWidgets.QPushButton("Remove Allowed")
+        base_actions = QtWidgets.QWidget()
+        base_actions_layout = QtWidgets.QHBoxLayout(base_actions)
+        base_actions_layout.setContentsMargins(0, 0, 0, 0)
+        base_actions_layout.setSpacing(4)
+        base_actions_layout.addWidget(set_required_base_btn)
+        base_actions_layout.addWidget(set_excluded_base_btn)
+        base_actions_layout.addWidget(add_allowed_base_btn)
+        base_actions_layout.addWidget(remove_allowed_base_btn)
+        base_actions_layout.addStretch(1)
+        selectors_layout.addWidget(base_actions, 3, 2, 1, 4)
 
-        selectors_layout.addWidget(QtWidgets.QLabel("Potion"), 6, 0)
-        selectors_layout.addWidget(self.potion_select, 6, 1, 1, 2)
-        set_potion_btn = QtWidgets.QPushButton("Set Effect Range")
-        selectors_layout.addWidget(set_potion_btn, 6, 3)
+        selectors_layout.addWidget(QtWidgets.QLabel("Legendary Preset"), 4, 0)
+        selectors_layout.addWidget(self.potion_select, 4, 1, 1, 4)
+        set_potion_btn = QtWidgets.QPushButton("Apply Range")
+        selectors_layout.addWidget(set_potion_btn, 4, 5)
+        selectors_layout.setColumnStretch(1, 1)
+        selectors_layout.setColumnStretch(2, 2)
+        selectors_layout.setColumnStretch(3, 1)
+        selectors_layout.setColumnStretch(4, 0)
 
         requirement_checks = QtWidgets.QHBoxLayout()
         self.exact_mode = QtWidgets.QCheckBox("Exact Mode")
@@ -1529,50 +1619,27 @@ class FilterTab(QtWidgets.QWidget):
         self.require_valid = QtWidgets.QCheckBox("Valid")
         self.require_base_tier_check = QtWidgets.QCheckBox("Check Base+Dull Tier")
         self.require_base_tier_check.setChecked(True)
+        self.extra_effects_min.setMaxLength(1)
+        self.extra_effects_min.setFixedWidth(36)
         requirement_checks.addWidget(self.exact_mode)
         requirement_checks.addWidget(self.require_weak)
         requirement_checks.addWidget(self.require_strong)
         requirement_checks.addWidget(self.require_dull)
         requirement_checks.addWidget(self.require_valid)
         requirement_checks.addWidget(self.require_base_tier_check)
+        requirement_checks.addWidget(QtWidgets.QLabel("Extra Effects"))
+        requirement_checks.addWidget(self.extra_effects_min)
         requirement_checks.addStretch(1)
-        requirement_form.addLayout(requirement_checks, 8, 0, 1, 2)
-
-        range_checks_bottom = QtWidgets.QHBoxLayout()
-        self.hidden_filter = QtWidgets.QComboBox()
-        self.hidden_filter.addItems(["Any", "Yes", "No"])
-        self.hidden_filter.setCurrentText("No")
-        self.show_no_links = QtWidgets.QCheckBox("Show No-Link")
-        self.show_no_links.setChecked(False)
-        self.plotter_filter = QtWidgets.QComboBox()
-        self.plotter_filter.addItems(["Any", "Yes", "No"])
-        self.discord_filter = QtWidgets.QComboBox()
-        self.discord_filter.addItems(["Any", "Yes", "No"])
-        range_checks_bottom.addWidget(QtWidgets.QLabel("Hidden"))
-        range_checks_bottom.addWidget(self.hidden_filter)
-        range_checks_bottom.addWidget(self.show_no_links)
-        range_checks_bottom.addWidget(QtWidgets.QLabel("Plotter"))
-        range_checks_bottom.addWidget(self.plotter_filter)
-        range_checks_bottom.addWidget(QtWidgets.QLabel("Discord"))
-        range_checks_bottom.addWidget(self.discord_filter)
-        range_checks_bottom.addStretch(1)
-        range_form.addLayout(range_checks_bottom, 6, 0, 1, 2)
+        self._requirement_misc_layout = requirement_checks
+        requirement_form.addLayout(requirement_checks, 3, 0, 1, 6)
 
         actions = QtWidgets.QHBoxLayout()
         filter_btn = QtWidgets.QPushButton("Filter")
         export_btn = QtWidgets.QPushButton("Export")
-        self.render_icons = QtWidgets.QCheckBox("Show Icons")
-        self.render_icons.setChecked(True)
         actions.addWidget(filter_btn)
         actions.addWidget(export_btn)
-        actions.addWidget(self.render_icons)
         actions.addStretch(1)
         layout.addLayout(actions)
-
-        output = QtWidgets.QTextEdit()
-        output.setReadOnly(True)
-        self.output = output
-        layout.addWidget(output)
 
         browse_btn.clicked.connect(self._browse_tome)
         init_btn.clicked.connect(self._init_db_from_snapshot)
@@ -1591,18 +1658,18 @@ class FilterTab(QtWidgets.QWidget):
         filter_btn.clicked.connect(self._run_filter)
         export_btn.clicked.connect(self._export_results)
 
-        self.tier_effect_select.currentTextChanged.connect(
+        self.effect_select.currentTextChanged.connect(
             lambda _value: self._sync_range_selection(
-                self.tier_effect_select.currentText(),
+                self.effect_select.currentText(),
                 self.effect_ranges,
                 Effects,
                 "effect_name",
                 self.effect_range_value,
             )
         )
-        self.ingredient_range_select.currentTextChanged.connect(
+        self.ingredient_select.currentTextChanged.connect(
             lambda _value: self._sync_range_selection(
-                self.ingredient_range_select.currentText(),
+                self.ingredient_select.currentText(),
                 self.ingredient_ranges,
                 Ingredients,
                 "ingredient_name",
@@ -1628,14 +1695,12 @@ class FilterTab(QtWidgets.QWidget):
         base_items = [(base.name, base.name) for base in PotionBases if base != PotionBases.Unknown]
         self._selector_combos = [
             (self.effect_select, "effects", effect_items),
-            (self.tier_effect_select, "effects", effect_items),
             (self.ingredient_select, "ingredients", ingredient_items),
-            (self.ingredient_range_select, "ingredients", ingredient_items),
             (self.salt_range_select, "salts", salt_items),
             (self.base_select, "bases", base_items),
         ]
 
-    def _build_potion_group_icon(self, potion: EffectTierList, icon_size: int = 24) -> QtGui.QIcon | None:
+    def _build_potion_group_icon(self, potion: EffectTierList, icon_size: int) -> QtGui.QIcon | None:
         names: list[str] = []
         for effect in Effects:
             tier = potion[effect.value]
@@ -1661,43 +1726,50 @@ class FilterTab(QtWidgets.QWidget):
 
     def _populate_potion_select(self) -> None:
         dropdown_mode = str(getattr(self.app, "selector_dropdown_mode", "matrix_large"))
+        potion_icon_px = max(12, min(96, int(getattr(self.app, "query_potion_icon_px", 24))))
         current_key = self.potion_select.currentData(QtCore.Qt.ItemDataRole.UserRole)
         self.potion_select.clear()
         max_icon_width = 0
         for key, potion in self._potion_defs.items():
-            label = key
+            label = ""
             self.potion_select.addItem(label)
             row = self.potion_select.count() - 1
             self.potion_select.setItemData(row, key, QtCore.Qt.ItemDataRole.UserRole)
             self.potion_select.setItemData(row, key, QtCore.Qt.ItemDataRole.ToolTipRole)
-            icon = self._build_potion_group_icon(potion)
+            icon = self._build_potion_group_icon(potion, icon_size=potion_icon_px)
             if icon is not None:
                 self.potion_select.setItemIcon(row, icon)
                 icon_sizes = icon.availableSizes()
                 if icon_sizes:
                     max_icon_width = max(max_icon_width, max(size.width() for size in icon_sizes))
             if dropdown_mode == "matrix_large":
-                self.potion_select.setItemData(row, QtCore.QSize(max(120, max_icon_width), 48), QtCore.Qt.ItemDataRole.SizeHintRole)
-        self.potion_select.setIconSize(QtCore.QSize(max(36, max_icon_width), 24))
+                row_height = max(32, potion_icon_px + 6)
+                self.potion_select.setItemData(row, QtCore.QSize(max(120, max_icon_width), row_height), QtCore.Qt.ItemDataRole.SizeHintRole)
+        self.potion_select.setIconSize(QtCore.QSize(max(potion_icon_px, max_icon_width), potion_icon_px))
         self.potion_select_view.setMinimumWidth(max(420 if dropdown_mode == "matrix_large" else 300, max_icon_width + 120))
+        text_h = self.potion_select.fontMetrics().height()
+        self.potion_select.setMinimumHeight(max(text_h + 8, potion_icon_px + 10))
         if current_key:
             idx = self.potion_select.findData(current_key, QtCore.Qt.ItemDataRole.UserRole)
             if idx >= 0:
                 self.potion_select.setCurrentIndex(idx)
 
     def apply_options(self) -> None:
+        self._apply_query_text_style()
+        self._apply_compact_top_row_style()
+        self._apply_misc_row_spacing()
         dropdown_mode = str(getattr(self.app, "selector_dropdown_mode", "matrix_large"))
         for combo, folder, items in self._selector_combos:
             current_text = combo.currentText()
             combo.clear()
             font = combo.font()
-            font.setPointSize(max(font.pointSize(), 11))
+            font.setPointSize(max(self._query_text_pt(), 10))
             combo.setFont(font)
             for text, icon_name in items:
                 combo.addItem(text)
                 row = combo.count() - 1
                 combo.setItemData(row, icon_name, QtCore.Qt.ItemDataRole.UserRole)
-                icon = self.icon_cache.icon(folder, icon_name, min(24, self._icon_px(folder)))
+                icon = self.icon_cache.icon(folder, icon_name, self._inline_icon_px())
                 if icon is not None:
                     combo.setItemIcon(row, icon)
             if current_text:
@@ -1732,6 +1804,20 @@ class FilterTab(QtWidgets.QWidget):
                 combo.setView(view)
             else:
                 combo.setView(QtWidgets.QListView(combo))
+        self._configure_short_range_edit(self.effect_range_value)
+        self._configure_short_range_edit(self.ingredient_range_value)
+        self._configure_short_range_edit(self.salt_range_value)
+        self._configure_edit_min_chars(self.require_effects, 24)
+        self._configure_edit_min_chars(self.effect_ranges, 20)
+        self._configure_edit_min_chars(self.ingredient_ranges, 20)
+        self._configure_edit_min_chars(self.salt_ranges, 16)
+        self._configure_edit_min_chars(self.base_list, 16)
+        self._configure_edit_min_chars(self.ingredients, 8)
+        self._configure_edit_min_chars(self.no_ingredients, 8)
+        self._configure_edit_min_chars(self.half_ingredient, 8)
+        self._configure_edit_min_chars(self.base, 8)
+        self._configure_edit_min_chars(self.not_base, 8)
+        self._configure_edit_min_chars(self.lowlander, 4)
         self._populate_potion_select()
 
     def _max_popup_height(self) -> int:
@@ -1754,6 +1840,63 @@ class FilterTab(QtWidgets.QWidget):
         text_pt = self._text_pt(folder)
         text_h = int(text_pt * 2.4)
         return max(icon_px + text_h + 8, icon_px + 24)
+
+    def _query_text_pt(self) -> int:
+        return max(8, min(24, int(getattr(self.app, "query_main_text_pt", 12))))
+
+    def _inline_icon_px(self) -> int:
+        text_pt = self._query_text_pt()
+        return max(12, min(32, int(text_pt * 1.5)))
+
+    def _apply_query_text_style(self) -> None:
+        pt = self._query_text_pt()
+        for widget_type in (
+            QtWidgets.QLabel,
+            QtWidgets.QLineEdit,
+            QtWidgets.QComboBox,
+            QtWidgets.QPushButton,
+            QtWidgets.QCheckBox,
+            QtWidgets.QGroupBox,
+        ):
+            for widget in self.findChildren(widget_type):
+                font = widget.font()
+                font.setPointSize(pt)
+                widget.setFont(font)
+
+    def _configure_short_range_edit(self, edit: QtWidgets.QLineEdit) -> None:
+        edit.setMaxLength(6)
+        metrics = edit.fontMetrics()
+        width = max(72, metrics.horizontalAdvance("0" * 6) + 20)
+        edit.setMinimumWidth(width)
+        edit.setMaximumWidth(width + 28)
+
+    def _configure_edit_min_chars(self, edit: QtWidgets.QLineEdit, chars: int) -> None:
+        metrics = edit.fontMetrics()
+        min_width = max(56, metrics.horizontalAdvance("0" * max(1, chars)) + 18)
+        edit.setMinimumWidth(min_width)
+
+    def _apply_compact_top_row_style(self) -> None:
+        if not hasattr(self, "_top_row_widgets"):
+            return
+        text_h = self.tome_path_edit.fontMetrics().height()
+        row_h = max(24, text_h + 8)
+        for widget in self._top_row_widgets:
+            if isinstance(widget, QtWidgets.QLineEdit):
+                widget.setFixedHeight(row_h)
+            elif isinstance(widget, QtWidgets.QPushButton):
+                widget.setFixedHeight(row_h)
+            elif isinstance(widget, QtWidgets.QLabel):
+                widget.setFixedHeight(max(18, text_h + 2))
+
+    def _apply_misc_row_spacing(self) -> None:
+        pt = self._query_text_pt()
+        spacing = max(4, int(pt * 0.8))
+        range_layout = getattr(self, "_range_misc_layout", None)
+        if isinstance(range_layout, QtWidgets.QHBoxLayout):
+            range_layout.setSpacing(spacing)
+        requirement_layout = getattr(self, "_requirement_misc_layout", None)
+        if isinstance(requirement_layout, QtWidgets.QHBoxLayout):
+            requirement_layout.setSpacing(spacing)
 
     def _browse_tome(self) -> None:
         base_dir = self.tome_path_edit.text().strip() or getattr(self.app, "external_data_path", "")
@@ -1788,7 +1931,7 @@ class FilterTab(QtWidgets.QWidget):
         self.require_effects.setText(_append_csv(self.require_effects.text(), name))
 
     def _add_required_tier(self) -> None:
-        effect_name = self.tier_effect_select.currentText().strip()
+        effect_name = self.effect_select.currentText().strip()
         if not effect_name:
             return
         try:
@@ -1802,7 +1945,7 @@ class FilterTab(QtWidgets.QWidget):
         self.effect_ranges.setText(_upsert_range_csv(self.effect_ranges.text(), effect_name, min_value, max_value))
 
     def _add_ingredient_range(self) -> None:
-        ingredient_name = self.ingredient_range_select.currentText().strip()
+        ingredient_name = self.ingredient_select.currentText().strip()
         if not ingredient_name:
             return
         try:
@@ -2038,12 +2181,7 @@ class FilterTab(QtWidgets.QWidget):
             return
 
         self.app.last_results = recipes
-        self.output.clear()
-        self.output.append(f"Matched {len(recipes)} recipes.\n")
-        for idx, recipe in enumerate(recipes):
-            self.output.append(f"[{idx}]\n{_format_recipe(recipe)}\n")
-        if self.render_icons.isChecked():
-            self._open_icon_view(recipes)
+        self._open_icon_view(recipes)
 
     def _export_results(self) -> None:
         if not self.app.last_results:
@@ -2093,10 +2231,7 @@ class FilterTab(QtWidgets.QWidget):
                     f.write(f"[{idx}]\n{_format_recipe(recipe)}\n\n")
 
     def _open_icon_view(self, recipes: list[Recipe]) -> None:
-        try:
-            page_size = int(self.page_size.text().strip() or "1")
-        except ValueError:
-            page_size = 1
+        page_size = max(1, min(200, int(getattr(self.app, "query_icon_page_size", 15))))
         db_path = Path(self.app.db_path)
         comments_by_hash = load_recipe_comments(db_path)
         links_by_hash = load_recipe_links(db_path)
@@ -2106,6 +2241,7 @@ class FilterTab(QtWidgets.QWidget):
             recipes,
             self.icon_cache,
             page_size,
+            int(getattr(self.app, "query_icon_view_icon_px", 36)),
             comments_by_hash=comments_by_hash,
             links_by_hash=links_by_hash,
         )

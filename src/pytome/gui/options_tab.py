@@ -13,10 +13,17 @@ class OptionsTab(QtWidgets.QWidget):
         self._icon_edits: dict[str, QtWidgets.QLineEdit] = {}
         self._text_sliders: dict[str, QtWidgets.QSlider] = {}
         self._text_edits: dict[str, QtWidgets.QLineEdit] = {}
+        self._query_sliders: dict[str, QtWidgets.QSlider] = {}
+        self._query_edits: dict[str, QtWidgets.QLineEdit] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
+        tabs = QtWidgets.QTabWidget()
+        layout.addWidget(tabs)
+
+        general_tab = QtWidgets.QWidget()
+        general_layout = QtWidgets.QVBoxLayout(general_tab)
 
         path_box = QtWidgets.QGroupBox("External Data")
         path_layout = QtWidgets.QGridLayout(path_box)
@@ -26,7 +33,7 @@ class OptionsTab(QtWidgets.QWidget):
         path_layout.addWidget(QtWidgets.QLabel("External data path"), 0, 0)
         path_layout.addWidget(self.external_data_path_edit, 0, 1)
         path_layout.addWidget(open_path_btn, 0, 2)
-        layout.addWidget(path_box)
+        general_layout.addWidget(path_box)
 
         box = QtWidgets.QGroupBox("Display")
         box_layout = QtWidgets.QGridLayout(box)
@@ -74,8 +81,62 @@ class OptionsTab(QtWidgets.QWidget):
                 max_value=24,
             )
         box_layout.setColumnStretch(1, 1)
-        layout.addWidget(box)
-        layout.addStretch(1)
+        general_layout.addWidget(box)
+        general_layout.addStretch(1)
+
+        query_tab = QtWidgets.QWidget()
+        query_layout = QtWidgets.QVBoxLayout(query_tab)
+        query_box = QtWidgets.QGroupBox("Query Page")
+        query_box_layout = QtWidgets.QGridLayout(query_box)
+        self._add_size_row(
+            layout=query_box_layout,
+            row=0,
+            title="Main text size",
+            slider_map=self._query_sliders,
+            edit_map=self._query_edits,
+            key="main_text_pt",
+            on_change=self.app.set_query_main_text_pt,
+            min_value=8,
+            max_value=24,
+        )
+        self._add_size_row(
+            layout=query_box_layout,
+            row=1,
+            title="Legendary selector icon px",
+            slider_map=self._query_sliders,
+            edit_map=self._query_edits,
+            key="potion_icon_px",
+            on_change=self.app.set_query_potion_icon_px,
+            min_value=12,
+            max_value=96,
+        )
+        self._add_size_row(
+            layout=query_box_layout,
+            row=2,
+            title="Icon view base icon px",
+            slider_map=self._query_sliders,
+            edit_map=self._query_edits,
+            key="icon_view_icon_px",
+            on_change=self.app.set_query_icon_view_icon_px,
+            min_value=12,
+            max_value=96,
+        )
+        self._add_size_row(
+            layout=query_box_layout,
+            row=3,
+            title="Icon view pagination size",
+            slider_map=self._query_sliders,
+            edit_map=self._query_edits,
+            key="icon_page_size",
+            on_change=self.app.set_query_icon_page_size,
+            min_value=1,
+            max_value=200,
+        )
+        query_layout.addWidget(query_box)
+        query_layout.addStretch(1)
+
+        tabs.addTab(general_tab, "General")
+        tabs.addTab(query_tab, "Query")
 
         self.dropdown_mode.currentIndexChanged.connect(self._on_dropdown_mode_changed)
         save_default_btn.clicked.connect(self.app.save_current_as_defaults)
@@ -112,6 +173,18 @@ class OptionsTab(QtWidgets.QWidget):
             slider.blockSignals(False)
             edit = self._text_edits[key]
             edit.setText(str(slider.value()))
+        query_values = {
+            "main_text_pt": int(getattr(self.app, "query_main_text_pt", 12)),
+            "potion_icon_px": int(getattr(self.app, "query_potion_icon_px", 24)),
+            "icon_view_icon_px": int(getattr(self.app, "query_icon_view_icon_px", 36)),
+            "icon_page_size": int(getattr(self.app, "query_icon_page_size", 15)),
+        }
+        for key, slider in self._query_sliders.items():
+            value = query_values.get(key, slider.value())
+            slider.blockSignals(True)
+            slider.setValue(value)
+            slider.blockSignals(False)
+            self._query_edits[key].setText(str(slider.value()))
         self.external_data_path_edit.setText(getattr(self.app, "external_data_path", ""))
 
     def _on_dropdown_mode_changed(self, index: int) -> None:

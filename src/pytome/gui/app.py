@@ -41,6 +41,11 @@ class TomeApp(QtWidgets.QMainWindow):
         self.selector_default_dropdown_mode = "matrix_large"
         self.selector_default_icon_sizes = dict(self.selector_icon_sizes)
         self.selector_default_text_sizes = dict(self.selector_text_sizes)
+        self.query_main_text_pt = 12
+        self.query_inline_icon_px = 16
+        self.query_potion_icon_px = 24
+        self.query_icon_view_icon_px = 36
+        self.query_icon_page_size = 15
         self._option_listeners: list[object] = []
         self._load_options_from_file()
 
@@ -116,6 +121,29 @@ class TomeApp(QtWidgets.QMainWindow):
                 if isinstance(value, int):
                     self.selector_default_text_sizes[folder] = max(1, min(24, value))
 
+        def _safe_int(value: object, fallback: int) -> int:
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                raw = value.strip()
+                if not raw:
+                    return fallback
+                try:
+                    return int(raw)
+                except ValueError:
+                    return fallback
+            return fallback
+
+        self.query_main_text_pt = max(8, min(24, _safe_int(payload.get("query_main_text_pt"), self.query_main_text_pt)))
+        self.query_inline_icon_px = max(12, min(96, _safe_int(payload.get("query_inline_icon_px"), self.query_inline_icon_px)))
+        self.query_potion_icon_px = max(12, min(96, _safe_int(payload.get("query_potion_icon_px"), self.query_potion_icon_px)))
+        self.query_icon_view_icon_px = max(12, min(96, _safe_int(payload.get("query_icon_view_icon_px"), self.query_icon_view_icon_px)))
+        self.query_icon_page_size = max(1, min(200, _safe_int(payload.get("query_icon_page_size"), self.query_icon_page_size)))
+
     def _save_options_to_file(self) -> None:
         path = self._options_file_path()
         payload = {
@@ -125,6 +153,11 @@ class TomeApp(QtWidgets.QMainWindow):
             "selector_default_dropdown_mode": self.selector_default_dropdown_mode,
             "selector_default_icon_sizes": self.selector_default_icon_sizes,
             "selector_default_text_sizes": self.selector_default_text_sizes,
+            "query_main_text_pt": self.query_main_text_pt,
+            "query_inline_icon_px": self.query_inline_icon_px,
+            "query_potion_icon_px": self.query_potion_icon_px,
+            "query_icon_view_icon_px": self.query_icon_view_icon_px,
+            "query_icon_page_size": self.query_icon_page_size,
         }
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -164,6 +197,31 @@ class TomeApp(QtWidgets.QMainWindow):
         self.selector_dropdown_mode = self.selector_default_dropdown_mode
         self.selector_icon_sizes = dict(self.selector_default_icon_sizes)
         self.selector_text_sizes = dict(self.selector_default_text_sizes)
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_query_main_text_pt(self, value: int) -> None:
+        self.query_main_text_pt = max(8, min(24, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_query_inline_icon_px(self, value: int) -> None:
+        self.query_inline_icon_px = max(12, min(96, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_query_potion_icon_px(self, value: int) -> None:
+        self.query_potion_icon_px = max(12, min(96, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_query_icon_view_icon_px(self, value: int) -> None:
+        self.query_icon_view_icon_px = max(12, min(96, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_query_icon_page_size(self, value: int) -> None:
+        self.query_icon_page_size = max(1, min(200, int(value)))
         self._save_options_to_file()
         self._notify_option_listeners()
 
