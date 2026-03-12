@@ -25,7 +25,22 @@ class TomeApp(QtWidgets.QMainWindow):
         self.db_path = str(DB_DATA_DIR / "tome.sqlite3")
         self.external_data_path = str(CACHE_DATA_DIR)
         self.last_results = []
-        self.use_icon_selectors = True
+        self.selector_dropdown_mode = "matrix_large"
+        self.selector_icon_sizes: dict[str, int] = {
+            "ingredients": 40,
+            "salts": 72,
+            "effects": 72,
+            "bases": 72,
+        }
+        self.selector_text_sizes: dict[str, int] = {
+            "ingredients": 12,
+            "salts": 16,
+            "effects": 16,
+            "bases": 16,
+        }
+        self.selector_default_dropdown_mode = "matrix_large"
+        self.selector_default_icon_sizes = dict(self.selector_icon_sizes)
+        self.selector_default_text_sizes = dict(self.selector_text_sizes)
         self._option_listeners: list[object] = []
         self._load_options_from_file()
 
@@ -66,12 +81,50 @@ class TomeApp(QtWidgets.QMainWindow):
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return
-        self.use_icon_selectors = bool(payload.get("use_icon_selectors", True))
+        mode = str(payload.get("selector_dropdown_mode", "")).strip()
+        if mode in {"matrix_large", "list_small"}:
+            self.selector_dropdown_mode = mode
+        else:
+            # Backward compatibility for old boolean option.
+            use_icons = bool(payload.get("use_icon_selectors", True))
+            self.selector_dropdown_mode = "matrix_large" if use_icons else "list_small"
+        icon_payload = payload.get("selector_icon_sizes", {})
+        if isinstance(icon_payload, dict):
+            for folder in self.selector_icon_sizes:
+                value = icon_payload.get(folder)
+                if isinstance(value, int):
+                    self.selector_icon_sizes[folder] = max(12, min(96, value))
+        text_payload = payload.get("selector_text_sizes", {})
+        if isinstance(text_payload, dict):
+            for folder in self.selector_text_sizes:
+                value = text_payload.get(folder)
+                if isinstance(value, int):
+                    self.selector_text_sizes[folder] = max(1, min(24, value))
+        default_mode = str(payload.get("selector_default_dropdown_mode", "")).strip()
+        if default_mode in {"matrix_large", "list_small"}:
+            self.selector_default_dropdown_mode = default_mode
+        default_icon_payload = payload.get("selector_default_icon_sizes", {})
+        if isinstance(default_icon_payload, dict):
+            for folder in self.selector_default_icon_sizes:
+                value = default_icon_payload.get(folder)
+                if isinstance(value, int):
+                    self.selector_default_icon_sizes[folder] = max(12, min(96, value))
+        default_text_payload = payload.get("selector_default_text_sizes", {})
+        if isinstance(default_text_payload, dict):
+            for folder in self.selector_default_text_sizes:
+                value = default_text_payload.get(folder)
+                if isinstance(value, int):
+                    self.selector_default_text_sizes[folder] = max(1, min(24, value))
 
     def _save_options_to_file(self) -> None:
         path = self._options_file_path()
         payload = {
-            "use_icon_selectors": bool(self.use_icon_selectors),
+            "selector_dropdown_mode": self.selector_dropdown_mode,
+            "selector_icon_sizes": self.selector_icon_sizes,
+            "selector_text_sizes": self.selector_text_sizes,
+            "selector_default_dropdown_mode": self.selector_default_dropdown_mode,
+            "selector_default_icon_sizes": self.selector_default_icon_sizes,
+            "selector_default_text_sizes": self.selector_default_text_sizes,
         }
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,8 +132,38 @@ class TomeApp(QtWidgets.QMainWindow):
         except OSError:
             return
 
-    def set_use_icon_selectors(self, enabled: bool) -> None:
-        self.use_icon_selectors = bool(enabled)
+    def set_selector_dropdown_mode(self, mode: str) -> None:
+        if mode not in {"matrix_large", "list_small"}:
+            return
+        self.selector_dropdown_mode = mode
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_selector_icon_size(self, folder: str, value: int) -> None:
+        if folder not in self.selector_icon_sizes:
+            return
+        self.selector_icon_sizes[folder] = max(12, min(96, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_selector_text_size(self, folder: str, value: int) -> None:
+        if folder not in self.selector_text_sizes:
+            return
+        self.selector_text_sizes[folder] = max(1, min(24, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def save_current_as_defaults(self) -> None:
+        self.selector_default_dropdown_mode = self.selector_dropdown_mode
+        self.selector_default_icon_sizes = dict(self.selector_icon_sizes)
+        self.selector_default_text_sizes = dict(self.selector_text_sizes)
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def restore_default_selector_config(self) -> None:
+        self.selector_dropdown_mode = self.selector_default_dropdown_mode
+        self.selector_icon_sizes = dict(self.selector_default_icon_sizes)
+        self.selector_text_sizes = dict(self.selector_default_text_sizes)
         self._save_options_to_file()
         self._notify_option_listeners()
 

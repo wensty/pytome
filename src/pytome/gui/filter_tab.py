@@ -213,6 +213,68 @@ class GroupSeparatorDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
 
+class IconTextPopupDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(
+        self,
+        icon_cache: IconCache,
+        folder: str,
+        icon_px: int,
+        text_point_size: int,
+        cell_px: int,
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._icon_cache = icon_cache
+        self._folder = folder
+        self._icon_px = icon_px
+        self._text_point_size = text_point_size
+        self._cell_px = cell_px
+
+    def paint(
+        self,
+        painter: QtGui.QPainter | None,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        if painter is None:
+            return
+        label = str(index.data(QtCore.Qt.ItemDataRole.DisplayRole) or "")
+        painter.save()
+        if option.state & QtWidgets.QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, option.palette.color(QtGui.QPalette.ColorRole.Highlight))
+        elif option.state & QtWidgets.QStyle.StateFlag.State_MouseOver:
+            painter.fillRect(option.rect, option.palette.color(QtGui.QPalette.ColorRole.AlternateBase))
+        else:
+            painter.fillRect(option.rect, option.palette.color(QtGui.QPalette.ColorRole.Base))
+        painter.restore()
+        icon_name = str(index.data(QtCore.Qt.ItemDataRole.UserRole) or "")
+        if not icon_name:
+            if label:
+                font = painter.font()
+                font.setPointSize(self._text_point_size)
+                painter.setFont(font)
+                text_rect = QtCore.QRect(option.rect.x() + 2, option.rect.y() + 2, option.rect.width() - 4, option.rect.height() - 4)
+                painter.drawText(text_rect, QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap, label)
+            return
+        pixmap = self._icon_cache.pixmap(self._folder, icon_name, self._icon_px)
+        if pixmap is None:
+            return
+        text_h = int(self._text_point_size * 2.4) if label else 0
+        x = option.rect.x() + (option.rect.width() - pixmap.width()) // 2
+        y = option.rect.y() + 2 + max(0, ((option.rect.height() - text_h - 4) - pixmap.height()) // 2)
+        painter.drawPixmap(x, y, pixmap)
+        if label:
+            font = painter.font()
+            font.setPointSize(self._text_point_size)
+            painter.setFont(font)
+            text_rect = QtCore.QRect(option.rect.x() + 2, option.rect.bottom() - text_h + 1, option.rect.width() - 4, text_h - 2)
+            painter.drawText(text_rect, QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap, label)
+
+    def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
+        _ = (option, index)
+        return QtCore.QSize(self._cell_px, self._cell_px)
+
+
 class RecipeEditorDialog(QtWidgets.QDialog):
     def __init__(
         self,
@@ -229,7 +291,9 @@ class RecipeEditorDialog(QtWidgets.QDialog):
         self._plotter_links: list[str] = []
         self._discord_links: list[str] = []
         app = getattr(parent, "app", None)
-        self._use_icon_selectors = bool(getattr(app, "use_icon_selectors", False))
+        self._selector_dropdown_mode = str(getattr(app, "selector_dropdown_mode", "matrix_large"))
+        self._selector_icon_sizes = dict(getattr(app, "selector_icon_sizes", {}))
+        self._selector_text_sizes = dict(getattr(app, "selector_text_sizes", {}))
         self._icon_cache = getattr(parent, "icon_cache", IconCache())
 
         layout = QtWidgets.QGridLayout(self)
@@ -347,24 +411,80 @@ class RecipeEditorDialog(QtWidgets.QDialog):
         buttons.rejected.connect(self.reject)
 
     def _apply_selector_icons(self) -> None:
-        if not self._use_icon_selectors:
-            return
+        def _configure_popup(combo: QtWidgets.QComboBox, folder: str) -> None:
+            host_window = self.window()
+            host_height = host_window.height() if host_window is not None else 900
+            max_popup_height = max(300, host_height - 80)
+            if self._selector_dropdown_mode == "matrix_large":
+                if folder == "bases":
+                    cols = 4
+                elif folder == "salts":
+                    cols = max(1, min(5, combo.count()))
+                else:
+                    cols = 7
+                rows = 1 if folder == "bases" else 9
+                view = QtWidgets.QListView(combo)
+                view.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
+                view.setFlow(QtWidgets.QListView.Flow.LeftToRight)
+                view.setWrapping(True)
+                view.setMovement(QtWidgets.QListView.Movement.Static)
+                icon_px = self._icon_px(folder)
+                text_pt = self._text_pt(folder)
+                cell_px = self._cell_px(folder)
+                view.setGridSize(QtCore.QSize(cell_px, cell_px))
+                view.setFixedWidth(cols * cell_px + 8)
+                item_count = max(1, combo.count())
+                rows_needed = max(1, (item_count + cols - 1) // cols)
+                rows_shown = min(rows, rows_needed)
+                view.setFixedHeight(min(rows_shown * cell_px + 8, max_popup_height))
+                view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                view.setItemDelegate(IconTextPopupDelegate(self._icon_cache, folder, icon_px, text_pt, cell_px, parent=view))
+                combo.setView(view)
+            else:
+                combo.setView(QtWidgets.QListView(combo))
+            font = combo.font()
+            font.setPointSize(max(font.pointSize(), 11))
+            combo.setFont(font)
+
         for idx, base in enumerate(PotionBases):
-            icon = self._icon_cache.icon("bases", base.name, 16)
+            icon = self._icon_cache.icon("bases", base.name, min(24, self._icon_px("bases")))
             if icon is not None:
                 self.base_combo.setItemIcon(idx, icon)
+            self.base_combo.setItemData(idx, base.name, QtCore.Qt.ItemDataRole.UserRole)
         for idx, effect in enumerate(Effects):
-            icon = self._icon_cache.icon("effects", effect.effect_name, 16)
+            icon = self._icon_cache.icon("effects", effect.effect_name, min(24, self._icon_px("effects")))
             if icon is not None:
                 self.effect_select.setItemIcon(idx, icon)
+            self.effect_select.setItemData(idx, effect.effect_name, QtCore.Qt.ItemDataRole.UserRole)
         for idx, ingredient in enumerate(Ingredients):
-            icon = self._icon_cache.icon("ingredients", ingredient.ingredient_name, 16)
+            icon = self._icon_cache.icon("ingredients", ingredient.ingredient_name, min(24, self._icon_px("ingredients")))
             if icon is not None:
                 self.ingredient_select.setItemIcon(idx, icon)
+            self.ingredient_select.setItemData(idx, ingredient.ingredient_name, QtCore.Qt.ItemDataRole.UserRole)
         for idx, salt in enumerate(Salts):
-            icon = self._icon_cache.icon("salts", salt.salt_name, 16)
+            icon = self._icon_cache.icon("salts", salt.salt_name, min(24, self._icon_px("salts")))
             if icon is not None:
                 self.salt_select.setItemIcon(idx, icon)
+            self.salt_select.setItemData(idx, salt.salt_name, QtCore.Qt.ItemDataRole.UserRole)
+        _configure_popup(self.base_combo, "bases")
+        _configure_popup(self.effect_select, "effects")
+        _configure_popup(self.ingredient_select, "ingredients")
+        _configure_popup(self.salt_select, "salts")
+
+    def _icon_px(self, folder: str) -> int:
+        value = int(self._selector_icon_sizes.get(folder, 54))
+        return max(12, min(96, value))
+
+    def _text_pt(self, folder: str) -> int:
+        value = int(self._selector_text_sizes.get(folder, 12))
+        return max(1, min(24, value))
+
+    def _cell_px(self, folder: str) -> int:
+        icon_px = self._icon_px(folder)
+        text_pt = self._text_pt(folder)
+        text_h = int(text_pt * 2.4)
+        return max(icon_px + text_h + 8, icon_px + 24)
 
     @staticmethod
     def _short_link(url: str, max_chars: int = 72) -> str:
@@ -548,7 +668,10 @@ class RecipeIconWindow(QtWidgets.QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Recipe Icon View")
-        self.resize(1600, 1200)
+        parent_window = parent.window() if parent is not None else None
+        parent_height = parent_window.height() if parent_window is not None else 900
+        max_h = max(420, parent_height - 40)
+        self.resize(1600, min(1200, max_h))
         self.app = app
         self.recipes = recipes
         self.icon_cache = icon_cache
@@ -1012,7 +1135,9 @@ class RecipeIconWindow(QtWidgets.QDialog):
 
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Manage Comments")
-        dialog.resize(760, 520)
+        host_window = self.window()
+        host_height = host_window.height() if host_window is not None else 900
+        dialog.resize(760, min(520, max(320, host_height - 60)))
         layout = QtWidgets.QVBoxLayout(dialog)
 
         list_widget = QtWidgets.QListWidget()
@@ -1535,51 +1660,100 @@ class FilterTab(QtWidgets.QWidget):
         return QtGui.QIcon(canvas)
 
     def _populate_potion_select(self) -> None:
-        use_icons = bool(getattr(self.app, "use_icon_selectors", False))
+        dropdown_mode = str(getattr(self.app, "selector_dropdown_mode", "matrix_large"))
         current_key = self.potion_select.currentData(QtCore.Qt.ItemDataRole.UserRole)
         self.potion_select.clear()
         max_icon_width = 0
         for key, potion in self._potion_defs.items():
-            label = key if not use_icons else ""
+            label = key
             self.potion_select.addItem(label)
             row = self.potion_select.count() - 1
             self.potion_select.setItemData(row, key, QtCore.Qt.ItemDataRole.UserRole)
             self.potion_select.setItemData(row, key, QtCore.Qt.ItemDataRole.ToolTipRole)
-            if use_icons:
-                icon = self._build_potion_group_icon(potion)
-                if icon is not None:
-                    self.potion_select.setItemIcon(row, icon)
-                    icon_sizes = icon.availableSizes()
-                    if icon_sizes:
-                        max_icon_width = max(max_icon_width, max(size.width() for size in icon_sizes))
-                self.potion_select.setItemData(row, QtCore.QSize(max(1, max_icon_width), 30), QtCore.Qt.ItemDataRole.SizeHintRole)
-        if use_icons:
-            self.potion_select.setIconSize(QtCore.QSize(max(240, max_icon_width), 24))
-            self.potion_select_view.setMinimumWidth(max(320, max_icon_width + 40))
-        else:
-            self.potion_select.setIconSize(QtCore.QSize(16, 16))
-            self.potion_select_view.setMinimumWidth(280)
+            icon = self._build_potion_group_icon(potion)
+            if icon is not None:
+                self.potion_select.setItemIcon(row, icon)
+                icon_sizes = icon.availableSizes()
+                if icon_sizes:
+                    max_icon_width = max(max_icon_width, max(size.width() for size in icon_sizes))
+            if dropdown_mode == "matrix_large":
+                self.potion_select.setItemData(row, QtCore.QSize(max(120, max_icon_width), 48), QtCore.Qt.ItemDataRole.SizeHintRole)
+        self.potion_select.setIconSize(QtCore.QSize(max(36, max_icon_width), 24))
+        self.potion_select_view.setMinimumWidth(max(420 if dropdown_mode == "matrix_large" else 300, max_icon_width + 120))
         if current_key:
             idx = self.potion_select.findData(current_key, QtCore.Qt.ItemDataRole.UserRole)
             if idx >= 0:
                 self.potion_select.setCurrentIndex(idx)
 
     def apply_options(self) -> None:
-        use_icons = bool(getattr(self.app, "use_icon_selectors", False))
+        dropdown_mode = str(getattr(self.app, "selector_dropdown_mode", "matrix_large"))
         for combo, folder, items in self._selector_combos:
             current_text = combo.currentText()
             combo.clear()
+            font = combo.font()
+            font.setPointSize(max(font.pointSize(), 11))
+            combo.setFont(font)
             for text, icon_name in items:
                 combo.addItem(text)
-                if use_icons:
-                    icon = self.icon_cache.icon(folder, icon_name, 16)
-                    if icon is not None:
-                        combo.setItemIcon(combo.count() - 1, icon)
+                row = combo.count() - 1
+                combo.setItemData(row, icon_name, QtCore.Qt.ItemDataRole.UserRole)
+                icon = self.icon_cache.icon(folder, icon_name, min(24, self._icon_px(folder)))
+                if icon is not None:
+                    combo.setItemIcon(row, icon)
             if current_text:
                 idx = combo.findText(current_text)
                 if idx >= 0:
                     combo.setCurrentIndex(idx)
+            if dropdown_mode == "matrix_large":
+                if folder == "bases":
+                    cols = 4
+                elif folder == "salts":
+                    cols = max(1, min(5, combo.count()))
+                else:
+                    cols = 7
+                rows = 1 if folder == "bases" else 9
+                view = QtWidgets.QListView(combo)
+                view.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
+                view.setFlow(QtWidgets.QListView.Flow.LeftToRight)
+                view.setWrapping(True)
+                view.setMovement(QtWidgets.QListView.Movement.Static)
+                icon_px = self._icon_px(folder)
+                text_pt = self._text_pt(folder)
+                cell_px = self._cell_px(folder)
+                view.setGridSize(QtCore.QSize(cell_px, cell_px))
+                view.setFixedWidth(cols * cell_px + 8)
+                item_count = max(1, combo.count())
+                rows_needed = max(1, (item_count + cols - 1) // cols)
+                rows_shown = min(rows, rows_needed)
+                view.setFixedHeight(min(rows_shown * cell_px + 8, self._max_popup_height()))
+                view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+                view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+                view.setItemDelegate(IconTextPopupDelegate(self.icon_cache, folder, icon_px, text_pt, cell_px, parent=view))
+                combo.setView(view)
+            else:
+                combo.setView(QtWidgets.QListView(combo))
         self._populate_potion_select()
+
+    def _max_popup_height(self) -> int:
+        host_window = self.window()
+        host_height = host_window.height() if host_window is not None else 900
+        return max(300, host_height - 80)
+
+    def _icon_px(self, folder: str) -> int:
+        sizes = getattr(self.app, "selector_icon_sizes", {})
+        value = int(sizes.get(folder, 54))
+        return max(12, min(96, value))
+
+    def _text_pt(self, folder: str) -> int:
+        sizes = getattr(self.app, "selector_text_sizes", {})
+        value = int(sizes.get(folder, 12))
+        return max(1, min(24, value))
+
+    def _cell_px(self, folder: str) -> int:
+        icon_px = self._icon_px(folder)
+        text_pt = self._text_pt(folder)
+        text_h = int(text_pt * 2.4)
+        return max(icon_px + text_h + 8, icon_px + 24)
 
     def _browse_tome(self) -> None:
         base_dir = self.tome_path_edit.text().strip() or getattr(self.app, "external_data_path", "")
@@ -1936,4 +2110,3 @@ class FilterTab(QtWidgets.QWidget):
             links_by_hash=links_by_hash,
         )
         window.exec()
-

@@ -447,7 +447,7 @@ class DullLowlanderTab(QtWidgets.QWidget):
             return
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Update Dull Lowlander Cell")
-        dialog.resize(980, 760)
+        dialog.resize(980, min(760, max(420, self.window().height() - 60)))
         layout = QtWidgets.QVBoxLayout(dialog)
         layout.addWidget(QtWidgets.QLabel(f"{cell.base.name} | {cell.effect.effect_name} | {cell.ingredient.ingredient_name}"))
 
