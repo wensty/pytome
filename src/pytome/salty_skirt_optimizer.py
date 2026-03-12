@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from math import ceil
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 import gzip
 import pickle
 
 from .common import BATCH_PRODUCTION_COST_RATE, BATCH_PRODUCTION_RATE, SALT_BATCH_SIZES, SALT_MASTERY_MULT
 from .ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS, Salts
-from .legendary import LegendaryRequirement, get_salty_skirt_requirements
+from .legendary import LegendaryRequirement, get_legendary_salt_requirements
 from .recipe_database import load_recipes
 from .recipes import Potion, Recipe
 
@@ -34,26 +34,14 @@ class SaltOrderVector:
 @dataclass(frozen=True)
 class SaltOptimizationResult:
     target_salt: Salts
-    target_units: int
     ingredient_cost: int
     ingredient_cost_per_unit: float
-    ingredient_per_1000: float
-    order_counts: tuple[float | int, ...]
-    gross_ingredient_vector: tuple[float, ...]
-    ingredient_vector_per_1000: tuple[float, ...]
-    gross_salt_consumption: tuple[float, ...]
-    salt_consumption_per_1000: tuple[float, ...]
-    net_salt_delta: tuple[float, ...]
-    selected_order_vectors: dict[Salts, SaltOrderVector]
 
 
 @dataclass(frozen=True)
 class SaltySkirtReport:
     order_vectors: dict[Salts, SaltOrderVector]
     per_salt_optima: dict[Salts, SaltOptimizationResult]
-    core_pair_optima: dict[Salts, SaltOptimizationResult]
-    core_pair_combined_delta: tuple[float, ...]
-    core_pair: tuple[Salts, Salts]
     iteration_count: int = 0
     from_cache: bool = False
 
@@ -75,7 +63,7 @@ def _sum_salts(recipe: Recipe) -> int:
 
 
 def _build_requirement_pool() -> dict[Salts, list[LegendaryRequirement]]:
-    grouped = get_salty_skirt_requirements()
+    grouped = get_legendary_salt_requirements()
     return {
         Salts.Void: list(grouped["Void"]),
         Salts.Moon: list(grouped["Moon"]),
@@ -108,12 +96,12 @@ def _is_dominated(lhs: Recipe, rhs: Recipe) -> bool:
     rhs_ing = tuple(int(v) for v in rhs.ingredient_num_list)
     lhs_salt = tuple(int(v) for v in lhs.salt_grain_list)
     rhs_salt = tuple(int(v) for v in rhs.salt_grain_list)
-    leq_ing = all(r <= l for l, r in zip(lhs_ing, rhs_ing))
-    leq_salt = all(r <= l for l, r in zip(lhs_salt, rhs_salt))
+    leq_ing = all(rhs_value <= lhs_value for lhs_value, rhs_value in zip(lhs_ing, rhs_ing))
+    leq_salt = all(rhs_value <= lhs_value for lhs_value, rhs_value in zip(lhs_salt, rhs_salt))
     if not (leq_ing and leq_salt):
         return False
-    strict_ing = any(r < l for l, r in zip(lhs_ing, rhs_ing))
-    strict_salt = any(r < l for l, r in zip(lhs_salt, rhs_salt))
+    strict_ing = any(rhs_value < lhs_value for lhs_value, rhs_value in zip(lhs_ing, rhs_ing))
+    strict_salt = any(rhs_value < lhs_value for lhs_value, rhs_value in zip(lhs_salt, rhs_salt))
     return strict_ing or strict_salt
 
 
@@ -188,7 +176,7 @@ def _solve_single_salt_milp(
     model.hideOutput()
     batch_scale = float(BATCH_PRODUCTION_RATE * BATCH_PRODUCTION_COST_RATE)
 
-    x_vars: dict[tuple[int, int], object] = {}
+    x_vars: dict[tuple[int, int], Any] = {}
     for potion_idx in range(len(requirements)):
         _sig, candidates = candidate_pool[(salt, potion_idx)]
         for recipe_idx in range(len(candidates)):
@@ -198,12 +186,12 @@ def _solve_single_salt_milp(
             )
         model.addCons(quicksum(x_vars[(potion_idx, recipe_idx)] for recipe_idx in range(len(candidates))) == 1)
 
-    y_vars: dict[int, object] = {}
-    z_vars: dict[int, object] = {}
+    y_vars: dict[int, Any] = {}
+    z_vars: dict[int, Any] = {}
     for ing_idx in range(NUMBER_OF_INGREDIENTS):
         y_var = model.addVar(name=f"y_{ing_idx}", vtype="INTEGER", lb=0)
         y_vars[ing_idx] = y_var
-        terms: list[object] = []
+        terms: list[Any] = []
         for potion_idx in range(len(requirements)):
             _sig, candidates = candidate_pool[(salt, potion_idx)]
             for recipe_idx, recipe in enumerate(candidates):
@@ -289,7 +277,7 @@ def _cache_path(db_path: Path) -> Path:
 
 def _load_cached_report(
     db_path: Path,
-    requirement_sig: tuple[tuple[int, tuple[tuple[int, ...], ...]], ...],
+    requirement_sig: tuple[tuple[int, tuple[tuple[str, tuple[int, ...]], ...]], ...],
     max_iterations: int | None,
 ) -> SaltySkirtReport | None:
     path = _cache_path(db_path)
@@ -300,7 +288,7 @@ def _load_cached_report(
             payload = pickle.load(f)
         if not isinstance(payload, dict):
             return None
-        if payload.get("schema") != 1:
+        if payload.get("schema") != 2:
             return None
         if payload.get("db_mtime_ns") != db_path.stat().st_mtime_ns:
             return None
@@ -320,13 +308,13 @@ def _load_cached_report(
 
 def _save_cached_report(
     db_path: Path,
-    requirement_sig: tuple[tuple[int, tuple[tuple[int, ...], ...]], ...],
+    requirement_sig: tuple[tuple[int, tuple[tuple[str, tuple[int, ...]], ...]], ...],
     max_iterations: int | None,
     report: SaltySkirtReport,
 ) -> None:
     path = _cache_path(db_path)
     payload = {
-        "schema": 1,
+        "schema": 2,
         "db_mtime_ns": db_path.stat().st_mtime_ns,
         "db_size": db_path.stat().st_size,
         "requirement_sig": requirement_sig,
@@ -391,43 +379,6 @@ def build_salt_order_vectors(db_path: Path) -> dict[Salts, SaltOrderVector]:
     return vectors
 
 
-def _net_delta(order_vectors: dict[Salts, SaltOrderVector], order_counts: tuple[float, ...]) -> tuple[float, ...]:
-    net = [0.0] * NUMBER_OF_SALTS
-    for salt in Salts:
-        times = float(order_counts[int(salt)])
-        if times <= 0.0:
-            continue
-        vector = order_vectors[salt]
-        net[int(salt)] += float(vector.produced_units) * times
-        for idx, consumed in enumerate(vector.salt_consumption):
-            net[idx] -= float(consumed) * times
-    return tuple(net)
-
-
-def _gross_ingredient(order_vectors: dict[Salts, SaltOrderVector], order_counts: tuple[float, ...]) -> tuple[float, ...]:
-    values = [0.0] * NUMBER_OF_INGREDIENTS
-    for salt in Salts:
-        times = float(order_counts[int(salt)])
-        if times <= 0.0:
-            continue
-        vector = order_vectors[salt]
-        for idx, amount in enumerate(vector.ingredient_consumption):
-            values[idx] += float(amount) * times
-    return tuple(values)
-
-
-def _gross_salt_consumption(order_vectors: dict[Salts, SaltOrderVector], order_counts: tuple[float, ...]) -> tuple[float, ...]:
-    values = [0.0] * NUMBER_OF_SALTS
-    for salt in Salts:
-        times = float(order_counts[int(salt)])
-        if times <= 0.0:
-            continue
-        vector = order_vectors[salt]
-        for idx, amount in enumerate(vector.salt_consumption):
-            values[idx] += float(amount) * times
-    return tuple(values)
-
-
 def solve_for_target_salt(
     order_vectors: dict[Salts, SaltOrderVector] | None,
     target_salt: Salts,
@@ -475,23 +426,10 @@ def solve_for_target_salt(
         order_counts[int(salt)] = normalized
         ingredient_cost += float(order_vectors[salt].ingredient_cost) * float(count)
 
-    net = _net_delta(order_vectors, tuple(float(v) for v in order_counts))
-    gross_ingredient = _gross_ingredient(order_vectors, tuple(float(v) for v in order_counts))
-    gross_salt = _gross_salt_consumption(order_vectors, tuple(float(v) for v in order_counts))
-    scale_1000 = 1000.0 / float(target_units)
     return SaltOptimizationResult(
         target_salt=target_salt,
-        target_units=int(target_units),
         ingredient_cost=int(round(ingredient_cost)),
         ingredient_cost_per_unit=float(ingredient_cost) / float(target_units),
-        ingredient_per_1000=float(ingredient_cost) * scale_1000,
-        order_counts=tuple(order_counts),
-        gross_ingredient_vector=gross_ingredient,
-        ingredient_vector_per_1000=tuple(value * scale_1000 for value in gross_ingredient),
-        gross_salt_consumption=gross_salt,
-        salt_consumption_per_1000=tuple(value * scale_1000 for value in gross_salt),
-        net_salt_delta=net,
-        selected_order_vectors=dict(order_vectors),
     )
 
 
@@ -517,19 +455,9 @@ def build_salty_skirt_report(
         max_iter=max_iterations,
     )
     per_salt_optima = {salt: solve_for_target_salt(vectors, salt) for salt in Salts}
-    core_pair = (Salts.Void, Salts.Philosopher)
-    core_pair_optima = {core_pair[0]: per_salt_optima[core_pair[0]], core_pair[1]: per_salt_optima[core_pair[1]]}
-    core_pair_combined_counts = [0.0] * NUMBER_OF_SALTS
-    for result in core_pair_optima.values():
-        for idx, value in enumerate(result.order_counts):
-            core_pair_combined_counts[idx] += float(value)
-    combined_delta = _net_delta(vectors, tuple(float(v) for v in core_pair_combined_counts))
     report = SaltySkirtReport(
         order_vectors=vectors,
         per_salt_optima=per_salt_optima,
-        core_pair_optima=core_pair_optima,
-        core_pair_combined_delta=combined_delta,
-        core_pair=core_pair,
         iteration_count=iteration_count,
         from_cache=False,
     )

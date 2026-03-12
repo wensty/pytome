@@ -32,6 +32,10 @@ class SaltySkirtTab(QtWidgets.QWidget):
         self.max_iter_edit.setFixedWidth(120)
         controls.addWidget(self.max_iter_edit)
         self.cache_btn = QtWidgets.QPushButton("Load Cache")
+        if (Path(self.app.db_path).parent / "salty_skirt_cache.pkl.gz").exists():
+            self.cache_btn.setStyleSheet("background-color: #c6f6c6;")
+        else:
+            self.cache_btn.setStyleSheet("background-color: #ffd6d6;")
         self.force_btn = QtWidgets.QPushButton("Recompute")
         controls.addWidget(self.cache_btn)
         controls.addWidget(self.force_btn)
@@ -190,18 +194,13 @@ class SaltySkirtTab(QtWidgets.QWidget):
                 self._set_center_item(self.summary_table, row, col, self._format_number(amount))
                 col += 1
 
-        combined = ",".join(f"{v:.3f}" for v in report.core_pair_combined_delta)
-        core_pair_text = f"{report.core_pair[0].salt_name} + {report.core_pair[1].salt_name}"
         if run_mode == "force":
             status_prefix = "Forced recalculation"
         elif report.from_cache:
             status_prefix = "Loaded cache"
         else:
             status_prefix = "Cache miss; calculated fresh"
-        self.status_label.setText(
-            f"{status_prefix} (iterations={report.iteration_count}, hidden recipes ignored). "
-            f"Core pair ({core_pair_text}) combined net delta: [{combined}]"
-        )
+        self.status_label.setText(f"{status_prefix} (iterations={report.iteration_count}, hidden recipes ignored).")
         self.summary_table.setFixedHeight(self.summary_table.rowCount() * 40 + 4)
         self.summary_header.setFixedHeight(58)
         self.summary_table.setMinimumWidth(980)

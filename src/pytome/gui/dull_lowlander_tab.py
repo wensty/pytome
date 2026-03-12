@@ -167,7 +167,8 @@ class DullLowlanderTab(QtWidgets.QWidget):
         self._scroll_by_base: dict[PotionBases, tuple[int, int]] = {}
         self._selected_key_by_base: dict[PotionBases, tuple[Effects, Ingredients]] = {}
         self._cell_px = 36
-        self._left_header_px = self._cell_px * 3 + 8
+        # 3 icons with 2px gaps: 3*cell + 2*2 = cell*3 + 4
+        self._left_header_px = self._cell_px * 3 + 4
         self._boundary_cols = self._build_boundary_cols(len(Ingredients))
         self._build_ui()
         self._active_base = self._selected_base()
@@ -202,7 +203,7 @@ class DullLowlanderTab(QtWidgets.QWidget):
         layout.addLayout(grid, 1)
 
         self.legend_btn = QtWidgets.QPushButton("Legend")
-        self.legend_btn.setMinimumSize(self._left_header_px, self._cell_px + 6)
+        self.legend_btn.setMinimumSize(self._left_header_px, self._cell_px + 2)
         self.legend_btn.clicked.connect(self._show_legend)
         grid.addWidget(self.legend_btn, 0, 0)
 
@@ -573,15 +574,9 @@ class DullLowlanderTab(QtWidgets.QWidget):
         if cell.recipe is not None:
             recipe_comments = list(self._comments_by_hash.get(get_recipe_hash(cell.recipe), []))
             comment_records.extend(recipe_comments)
-            comment_records.extend(
-                RecipeCommentRecord(comment_type=CommentType.Other, author=item.author, text=item.text)
-                for item in temp_records
-            )
+            comment_records.extend(RecipeCommentRecord(comment_type=CommentType.Other, author=item.author, text=item.text) for item in temp_records)
         else:
-            comment_records.extend(
-                RecipeCommentRecord(comment_type=CommentType.Other, author=item.author, text=item.text)
-                for item in temp_records
-            )
+            comment_records.extend(RecipeCommentRecord(comment_type=CommentType.Other, author=item.author, text=item.text) for item in temp_records)
 
         def _dedupe_comment_records(records: list[RecipeCommentRecord]) -> list[RecipeCommentRecord]:
             seen: set[tuple[int, str, str]] = set()
@@ -845,15 +840,15 @@ class DullLowlanderTab(QtWidgets.QWidget):
         col_count = len(ingredient_list)
         self.top_header_table.setRowCount(1)
         self.top_header_table.setColumnCount(col_count)
-        self.top_header_table.setRowHeight(0, self._cell_px + 8)
+        self.top_header_table.setRowHeight(0, self._cell_px + 2)
         self.left_header_table.setRowCount(row_count)
         self.left_header_table.setColumnCount(1)
         self.body_table.setRowCount(row_count)
         self.body_table.setColumnCount(col_count)
 
-        self.top_header_table.setFixedHeight(self._cell_px + 12)
-        self.left_header_table.setFixedWidth(self._left_header_px + 6)
-        self.legend_btn.setFixedSize(self._left_header_px + 6, self._cell_px + 12)
+        self.top_header_table.setFixedHeight(self._cell_px + 4)
+        self.left_header_table.setFixedWidth(self._left_header_px + 2)
+        self.legend_btn.setFixedSize(self._left_header_px + 2, self._cell_px + 4)
 
         for col, ingredient in enumerate(ingredient_list):
             self.top_header_table.setColumnWidth(col, self._cell_px + 2)
