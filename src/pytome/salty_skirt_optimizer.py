@@ -9,7 +9,7 @@ import pickle
 
 from .common import BATCH_PRODUCTION_COST_RATE, BATCH_PRODUCTION_RATE, SALT_BATCH_SIZES, SALT_MASTERY_MULT
 from .ingredients import NUMBER_OF_INGREDIENTS, NUMBER_OF_SALTS, Salts
-from .legendary import LegendaryRequirement, get_legendary_salt_requirements
+from .legendary import LegendaryComponent, get_legendary_salt_requirements
 from .recipe_database import load_recipes
 from .recipes import Potion, Recipe
 
@@ -62,7 +62,7 @@ def _sum_salts(recipe: Recipe) -> int:
     return sum(int(v) for v in recipe.salt_grain_list)
 
 
-def _build_requirement_pool() -> dict[Salts, list[LegendaryRequirement]]:
+def _build_requirement_pool() -> dict[Salts, list[LegendaryComponent]]:
     grouped = get_legendary_salt_requirements()
     return {
         Salts.Void: list(grouped["Void"]),
@@ -122,7 +122,7 @@ def _prune_dominated(candidates: list[Recipe]) -> list[Recipe]:
 
 def _build_candidate_pool(
     recipes: Iterable[Recipe],
-    requirement_pool: dict[Salts, list[LegendaryRequirement]],
+    requirement_pool: dict[Salts, list[LegendaryComponent]],
 ) -> dict[tuple[Salts, int], tuple[tuple[int, ...], list[Recipe]]]:
     pool: dict[tuple[Salts, int], tuple[tuple[int, ...], list[Recipe]]] = {}
     all_recipes = list(recipes)
@@ -163,7 +163,7 @@ def _build_order_vector(
 def _solve_single_salt_milp(
     salt: Salts,
     candidate_pool: dict[tuple[Salts, int], tuple[tuple[int, ...], list[Recipe]]],
-    requirement_pool: dict[Salts, list[LegendaryRequirement]],
+    requirement_pool: dict[Salts, list[LegendaryComponent]],
     salt_prices: dict[Salts, float],
 ) -> SaltOrderVector:
     try:
@@ -260,7 +260,7 @@ def _initial_salt_prices(order_vectors: dict[Salts, SaltOrderVector]) -> dict[Sa
 
 
 def _requirements_signature(
-    requirement_pool: dict[Salts, list[LegendaryRequirement]],
+    requirement_pool: dict[Salts, list[LegendaryComponent]],
 ) -> tuple[tuple[int, tuple[tuple[str, tuple[int, ...]], ...]], ...]:
     return tuple(
         (
@@ -327,7 +327,7 @@ def _save_cached_report(
 
 def _iterative_joint_vectors(
     candidate_pool: dict[tuple[Salts, int], tuple[tuple[int, ...], list[Recipe]]],
-    requirement_pool: dict[Salts, list[LegendaryRequirement]],
+    requirement_pool: dict[Salts, list[LegendaryComponent]],
     initial_prices: dict[Salts, float],
     max_iter: int | None = None,
     tol: float = 1e-4,

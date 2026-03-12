@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from . import single_effect as SingleEffect
 from .recipes import Potion
@@ -7,23 +7,26 @@ VERSION = 2
 
 
 @dataclass(frozen=True)
-class LegendaryRequirement:
+class LegendaryComponent:
     group: str
     potion: Potion
 
 
-@dataclass
 class LegendarySubstance:
-    name: str
-    required_potions: list[Potion] = field(default_factory=list)
-    required_substance: "LegendarySubstance | None" = None
+    def __init__(self, name: str, *required_potions: Potion, required_substance: "LegendarySubstance | None" = None) -> None:
+        self.name = name
+        self.required_potions = list(required_potions)
+        self.required_substance = required_substance
 
-    def get_legendary_requirements(self) -> list[LegendaryRequirement]:
-        requirements: list[LegendaryRequirement] = []
+    def __repr__(self) -> str:
+        return f"LegendarySubstance(name={self.name}, required_potions={self.required_potions}, required_substance={self.required_substance})"
+
+    def get_legendary_components(self) -> list[LegendaryComponent]:
+        components: list[LegendaryComponent] = []
         if self.required_substance is not None:
-            requirements.extend(self.required_substance.get_legendary_requirements())
-        requirements.extend(LegendaryRequirement(group=self.name, potion=potion) for potion in self.required_potions)
-        return requirements
+            components.extend(self.required_substance.get_legendary_components())
+        components.extend(LegendaryComponent(group=self.name, potion=potion) for potion in self.required_potions)
+        return components
 
 
 VoidSalt_1 = Potion.from_name(Poison=1, Fire=1, Explosion=1, Lightning=1, Frost=1)
@@ -79,157 +82,137 @@ PhiloSalt_12 = Potion.from_name(Rage=1, Fear=1, Enlargement=1, Curse=1, Necroman
 
 Nigredo = LegendarySubstance(
     "Nigredo",
-    [
-        SingleEffect.StrongPoison,
-        SingleEffect.StrongStrength,
-        SingleEffect.StrongStoneSkin,
-        SingleEffect.StrongSleep,
-        SingleEffect.StrongSlowness,
-    ],
+    SingleEffect.StrongPoison,
+    SingleEffect.StrongStrength,
+    SingleEffect.StrongStoneSkin,
+    SingleEffect.StrongSleep,
+    SingleEffect.StrongSlowness,
 )
 Albedo = LegendarySubstance(
     "Albedo",
-    [
-        SingleEffect.StrongDexterity,
-        SingleEffect.StrongSwiftness,
-        SingleEffect.StrongCharm,
-        SingleEffect.StrongInvisibility,
-        SingleEffect.StrongLevitation,
-        SingleEffect.StrongFrost,
-        SingleEffect.StrongLightning,
-        SingleEffect.StrongMana,
-        SingleEffect.StrongMagicalVision,
-    ],
-    Nigredo,
+    SingleEffect.StrongDexterity,
+    SingleEffect.StrongSwiftness,
+    SingleEffect.StrongCharm,
+    SingleEffect.StrongInvisibility,
+    SingleEffect.StrongLevitation,
+    SingleEffect.StrongFrost,
+    SingleEffect.StrongLightning,
+    SingleEffect.StrongMana,
+    SingleEffect.StrongMagicalVision,
+    required_substance=Nigredo,
 )
 Citrinitas = LegendarySubstance(
     "Citrinitas",
-    [
-        SingleEffect.StrongExplosion,
-        SingleEffect.StrongEnlargement,
-        SingleEffect.StrongFire,
-        SingleEffect.StrongLight,
-        SingleEffect.StrongRage,
-        SingleEffect.StrongSlipperiness,
-        SingleEffect.StrongFrostProtection,
-        SingleEffect.StrongFireProtection,
-        SingleEffect.StrongShrinking,
-    ],
-    Albedo,
+    SingleEffect.StrongExplosion,
+    SingleEffect.StrongEnlargement,
+    SingleEffect.StrongFire,
+    SingleEffect.StrongLight,
+    SingleEffect.StrongRage,
+    SingleEffect.StrongSlipperiness,
+    SingleEffect.StrongFrostProtection,
+    SingleEffect.StrongFireProtection,
+    SingleEffect.StrongShrinking,
+    required_substance=Albedo,
 )
 Rubedo = LegendarySubstance(
     "Rubedo",
-    [
-        SingleEffect.StrongHealing,
-        SingleEffect.StrongPoisonProtection,
-        SingleEffect.StrongAcidProtection,
-        SingleEffect.StrongWildGrowth,
-        SingleEffect.StrongRejuvenation,
-        SingleEffect.StrongLibido,
-        SingleEffect.StrongAcid,
-        SingleEffect.StrongNecromancy,
-        SingleEffect.StrongFear,
-        SingleEffect.StrongGluing,
-        SingleEffect.StrongLightningProtection,
-        SingleEffect.StrongAntiMagic,
-    ],
-    Citrinitas,
+    SingleEffect.StrongHealing,
+    SingleEffect.StrongPoisonProtection,
+    SingleEffect.StrongAcidProtection,
+    SingleEffect.StrongWildGrowth,
+    SingleEffect.StrongRejuvenation,
+    SingleEffect.StrongLibido,
+    SingleEffect.StrongAcid,
+    SingleEffect.StrongNecromancy,
+    SingleEffect.StrongFear,
+    SingleEffect.StrongGluing,
+    SingleEffect.StrongLightningProtection,
+    SingleEffect.StrongAntiMagic,
+    required_substance=Citrinitas,
 )
 PhilosopherStone = LegendarySubstance(
     "Philosopher Stone",
-    [
-        PhiloStone_4,
-        VoidSalt_1,  # same recipe.
-        PhiloStone_2,
-        PhiloStone_5,
-        PhiloStone_3,
-        PhiloStone_1,
-        SingleEffect.StrongCurse,
-        SingleEffect.StrongStench,
-        SingleEffect.StrongFragrance,
-        SingleEffect.StrongInspiration,
-        SingleEffect.StrongLuck,
-        SingleEffect.StrongHallucinations,
-    ],
-    Rubedo,
+    PhiloStone_4,
+    VoidSalt_1,  # same recipe.
+    PhiloStone_2,
+    PhiloStone_5,
+    PhiloStone_3,
+    PhiloStone_1,
+    SingleEffect.StrongCurse,
+    SingleEffect.StrongStench,
+    SingleEffect.StrongFragrance,
+    SingleEffect.StrongInspiration,
+    SingleEffect.StrongLuck,
+    SingleEffect.StrongHallucinations,
+    required_substance=Rubedo,
 )
 
 VoidSalt = LegendarySubstance(
     "Void Salt",
-    [
-        VoidSalt_2,
-        VoidSalt_1,
-        SingleEffect.StrongSlowness,
-        SingleEffect.StrongSleep,
-        SingleEffect.StrongPoison,
-    ],
-    Nigredo,
+    VoidSalt_2,
+    VoidSalt_1,
+    SingleEffect.StrongSlowness,
+    SingleEffect.StrongSleep,
+    SingleEffect.StrongPoison,
+    required_substance=Nigredo,
 )
 MoonSalt = LegendarySubstance(
     "Moon Salt",
-    [
-        MoonSalt_3,
-        MoonSalt_1,
-        MoonSalt_2,
-        SingleEffect.StrongFrostProtection,
-        SingleEffect.StrongFireProtection,
-        SingleEffect.StrongDexterity,
-        SingleEffect.StrongSwiftness,
-        SingleEffect.StrongMana,
-        SingleEffect.StrongLight,
-    ],
-    Albedo,
+    MoonSalt_3,
+    MoonSalt_1,
+    MoonSalt_2,
+    SingleEffect.StrongFrostProtection,
+    SingleEffect.StrongFireProtection,
+    SingleEffect.StrongDexterity,
+    SingleEffect.StrongSwiftness,
+    SingleEffect.StrongMana,
+    SingleEffect.StrongLight,
+    required_substance=Albedo,
 )
 SunSalt = LegendarySubstance(
     "Sun Salt",
-    [
-        SunSalt_3,
-        SunSalt_1,
-        SunSalt_2,
-        SingleEffect.StrongLightningProtection,
-        SingleEffect.StrongPoisonProtection,
-        SingleEffect.StrongLibido,
-        SingleEffect.StrongEnlargement,
-        SingleEffect.StrongLight,
-        SingleEffect.StrongFire,
-    ],
-    Citrinitas,
+    SunSalt_3,
+    SunSalt_1,
+    SunSalt_2,
+    SingleEffect.StrongLightningProtection,
+    SingleEffect.StrongPoisonProtection,
+    SingleEffect.StrongLibido,
+    SingleEffect.StrongEnlargement,
+    SingleEffect.StrongLight,
+    SingleEffect.StrongFire,
+    required_substance=Citrinitas,
 )
 LifeSalt = LegendarySubstance(
     "Life Salt",
-    [
-        SingleEffect.StrongHealing,
-        SingleEffect.StrongWildGrowth,
-        SingleEffect.StrongLibido,
-        SingleEffect.StrongNecromancy,
-        SingleEffect.StrongRejuvenation,
-        LifeSalt_1,
-        LifeSalt_2,
-        LifeSalt_3,
-        LifeSalt_6,
-        LifeSalt_5,
-        LifeSalt_4,
-        LifeSalt_7,
-    ],
-    Rubedo,
+    SingleEffect.StrongHealing,
+    SingleEffect.StrongWildGrowth,
+    SingleEffect.StrongLibido,
+    SingleEffect.StrongNecromancy,
+    SingleEffect.StrongRejuvenation,
+    LifeSalt_1,
+    LifeSalt_2,
+    LifeSalt_3,
+    LifeSalt_6,
+    LifeSalt_5,
+    LifeSalt_4,
+    LifeSalt_7,
+    required_substance=Rubedo,
 )
 PhilosopherSalt = LegendarySubstance(
     "Philosopher's Salt",
-    [
-        PhiloSalt_11,
-        PhiloSalt_8,
-        PhiloSalt_9,
-        PhiloSalt_12,
-        PhiloSalt_10,
-        PhiloSalt_1,
-        PhiloSalt_2,
-        PhiloSalt_3,
-        PhiloSalt_6,
-        PhiloSalt_5,
-        PhiloSalt_4,
-        PhiloSalt_7,
-    ],
-    PhilosopherStone,
+    PhiloSalt_11,
+    PhiloSalt_8,
+    PhiloSalt_9,
+    PhiloSalt_12,
+    PhiloSalt_10,
+    PhiloSalt_1,
+    PhiloSalt_2,
+    PhiloSalt_3,
+    PhiloSalt_6,
+    PhiloSalt_5,
+    PhiloSalt_4,
+    PhiloSalt_7,
+    required_substance=PhilosopherStone,
 )
 
 LEGENDARY_SALT_SUBSTANCES: dict[str, LegendarySubstance] = {
@@ -241,5 +224,5 @@ LEGENDARY_SALT_SUBSTANCES: dict[str, LegendarySubstance] = {
 }
 
 
-def get_legendary_salt_requirements() -> dict[str, list[LegendaryRequirement]]:
-    return {salt_key: substance.get_legendary_requirements() for salt_key, substance in LEGENDARY_SALT_SUBSTANCES.items()}
+def get_legendary_salt_requirements() -> dict[str, list[LegendaryComponent]]:
+    return {salt_key: substance.get_legendary_components() for salt_key, substance in LEGENDARY_SALT_SUBSTANCES.items()}
