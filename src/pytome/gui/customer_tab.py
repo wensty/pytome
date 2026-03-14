@@ -6,6 +6,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from ..customer_database import build_customer_database, load_customer_requests, load_story_lines
 from ..effects import Effects
+from .font_utils import text_height_for_point_size
 from .icons import IconCache
 from .shared import _append_csv, _parse_enum_list
 
@@ -56,14 +57,14 @@ class IconTextPopupDelegate(QtWidgets.QStyledItemDelegate):
         pixmap = self._icon_cache.pixmap(self._folder, icon_name, self._icon_px)
         if pixmap is None:
             return
-        text_h = int(self._text_point_size * 2.4) if label else 0
+        font = painter.font()
+        font.setPointSize(self._text_point_size)
+        painter.setFont(font)
+        text_h = painter.fontMetrics().height() if label else 0
         x = option.rect.x() + (option.rect.width() - pixmap.width()) // 2
         y = option.rect.y() + 2 + max(0, ((option.rect.height() - text_h - 4) - pixmap.height()) // 2)
         painter.drawPixmap(x, y, pixmap)
         if label:
-            font = painter.font()
-            font.setPointSize(self._text_point_size)
-            painter.setFont(font)
             text_rect = QtCore.QRect(option.rect.x() + 2, option.rect.bottom() - text_h + 1, option.rect.width() - 4, text_h - 2)
             painter.drawText(text_rect, QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap, label)
 
@@ -202,7 +203,7 @@ class CustomerTab(QtWidgets.QWidget):
     def _cell_px(self, folder: str) -> int:
         icon_px = self._icon_px(folder)
         text_pt = self._text_pt(folder)
-        text_h = int(text_pt * 2.4)
+        text_h = text_height_for_point_size(text_pt)
         return max(icon_px + text_h + 8, icon_px + 24)
 
     def _add_customer_effect(self) -> None:
