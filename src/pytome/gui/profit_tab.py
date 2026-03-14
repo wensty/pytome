@@ -80,17 +80,18 @@ class _IconPopupDelegate(QtWidgets.QStyledItemDelegate):
         font = painter.font()
         font.setPointSize(self._text_point_size)
         painter.setFont(font)
-        text_h = painter.fontMetrics().height() if label else 0
+        line_h = painter.fontMetrics().height() if label else 0
+        text_h_total = 2 * line_h if label else 0  # At least 2 lines for text area
         y_top = option.rect.y() + 2
         x = option.rect.x() + (option.rect.width() - pixmap.width()) // 2
-        y = y_top + max(0, ((option.rect.height() - text_h - 4) - pixmap.height()) // 2)
+        y = y_top + max(0, ((option.rect.height() - text_h_total - 4) - pixmap.height()) // 2)
         painter.drawPixmap(x, y, pixmap)
         if label:
             text_rect = QtCore.QRect(
                 option.rect.x() + 2,
-                option.rect.bottom() - text_h + 1,
+                option.rect.bottom() - text_h_total + 1,
                 option.rect.width() - 4,
-                text_h - 2,
+                text_h_total - 2,
             )
             painter.drawText(text_rect, QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap, label)
 
@@ -111,16 +112,31 @@ class ProfitTab(QtWidgets.QWidget):
         self._ingredient_popup_rows = 9
         self._base_popup_cols = 4
         self._base_popup_rows = 1
-        self._ingredient_combo_icon_px = 16
-        self._base_combo_icon_px = 18
         self._build_ui()
+
+    def _main_text_pt(self) -> int:
+        return max(8, min(24, int(getattr(self.app, "query_main_text_pt", 12))))
+
+    def _inline_icon_px(self) -> int:
+        return max(12, min(32, int(self._main_text_pt() * 1.5)))
+
+    def _apply_main_text_style(self) -> None:
+        pt = self._main_text_pt()
+        for widget_type in (
+            QtWidgets.QLabel,
+            QtWidgets.QLineEdit,
+            QtWidgets.QComboBox,
+            QtWidgets.QPushButton,
+            QtWidgets.QCheckBox,
+            QtWidgets.QGroupBox,
+        ):
+            for widget in self.findChildren(widget_type):
+                font = widget.font()
+                font.setPointSize(pt)
+                widget.setFont(font)
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-
-        header = QtWidgets.QLabel("Profit Predictor")
-        header.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Fixed)
-        layout.addWidget(header)
 
         form = QtWidgets.QGridLayout()
         layout.addLayout(form)
@@ -317,7 +333,7 @@ class ProfitTab(QtWidgets.QWidget):
             icon_px=self._icon_px("ingredients"),
             text_point_size=self._text_pt("ingredients"),
             cell_px=self._cell_px("ingredients"),
-            combo_icon_px=self._ingredient_combo_icon_px,
+            combo_icon_px=self._inline_icon_px(),
         )
         self._setup_icon_grid_combo_view(
             self.profit_half_ingredient,
@@ -327,7 +343,7 @@ class ProfitTab(QtWidgets.QWidget):
             icon_px=self._icon_px("ingredients"),
             text_point_size=self._text_pt("ingredients"),
             cell_px=self._cell_px("ingredients"),
-            combo_icon_px=self._ingredient_combo_icon_px,
+            combo_icon_px=self._inline_icon_px(),
         )
         self._setup_icon_grid_combo_view(
             self.profit_exclude_ingredient,
@@ -337,7 +353,7 @@ class ProfitTab(QtWidgets.QWidget):
             icon_px=self._icon_px("ingredients"),
             text_point_size=self._text_pt("ingredients"),
             cell_px=self._cell_px("ingredients"),
-            combo_icon_px=self._ingredient_combo_icon_px,
+            combo_icon_px=self._inline_icon_px(),
         )
         self._setup_icon_grid_combo_view(
             self.profit_base,
@@ -347,7 +363,7 @@ class ProfitTab(QtWidgets.QWidget):
             icon_px=self._icon_px("bases"),
             text_point_size=self._text_pt("bases"),
             cell_px=self._cell_px("bases"),
-            combo_icon_px=self._base_combo_icon_px,
+            combo_icon_px=self._inline_icon_px(),
         )
         self._setup_icon_grid_combo_view(
             self.profit_not_base,
@@ -357,10 +373,11 @@ class ProfitTab(QtWidgets.QWidget):
             icon_px=self._icon_px("bases"),
             text_point_size=self._text_pt("bases"),
             cell_px=self._cell_px("bases"),
-            combo_icon_px=self._base_combo_icon_px,
+            combo_icon_px=self._inline_icon_px(),
         )
 
     def apply_options(self) -> None:
+        self._apply_main_text_style()
         dropdown_mode = str(getattr(self.app, "selector_dropdown_mode", "matrix_large"))
         popup_target_combos = {
             self.profit_recipe_base,
@@ -373,23 +390,19 @@ class ProfitTab(QtWidgets.QWidget):
             self.profit_base,
             self.profit_not_base,
         }
+        pt = self._main_text_pt()
         for combo, folder, items in self._selector_combos:
             current_value = combo.currentData(QtCore.Qt.ItemDataRole.UserRole) or combo.currentText()
             combo.clear()
             font = combo.font()
-            font.setPointSize(max(font.pointSize(), 11))
+            font.setPointSize(max(pt, 10))
             combo.setFont(font)
             for text, icon_name in items:
                 combo.addItem(text)
                 combo.setItemData(combo.count() - 1, icon_name if icon_name else text, QtCore.Qt.ItemDataRole.UserRole)
                 combo.setItemData(combo.count() - 1, text, QtCore.Qt.ItemDataRole.ToolTipRole)
                 if icon_name:
-                    if combo in (self.profit_base, self.profit_not_base):
-                        icon_size = self._base_combo_icon_px
-                    elif combo in popup_target_combos:
-                        icon_size = self._ingredient_combo_icon_px
-                    else:
-                        icon_size = 16
+                    icon_size = self._inline_icon_px()
                     icon = self.icon_cache.icon(folder, icon_name, icon_size)
                     if icon is not None:
                         combo.setItemIcon(combo.count() - 1, icon)
@@ -427,7 +440,7 @@ class ProfitTab(QtWidgets.QWidget):
                 icon_px = self._icon_px(folder)
                 text_point_size = self._text_pt(folder)
                 cell_px = self._cell_px(folder)
-                combo_icon_px = self._base_combo_icon_px if folder == "bases" else self._ingredient_combo_icon_px
+                combo_icon_px = self._inline_icon_px()
                 self._setup_icon_grid_combo_view(combo, folder, cols, rows, icon_px, text_point_size, cell_px, combo_icon_px)
             else:
                 self._setup_small_list_combo_view(combo)
@@ -455,7 +468,10 @@ class ProfitTab(QtWidgets.QWidget):
         item_count = max(1, combo.count())
         rows_needed = max(1, (item_count + cols - 1) // cols)
         rows_shown = min(rows, rows_needed)
-        view.setFixedHeight(min(rows_shown * cell_px + 8, self._max_popup_height()))
+        content_h = rows_shown * cell_px
+        view.setMinimumHeight(0)
+        view.setMaximumHeight(self._max_popup_height())
+        view.setFixedHeight(min(content_h, self._max_popup_height()))
         view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         view.setItemDelegate(
@@ -495,12 +511,11 @@ class ProfitTab(QtWidgets.QWidget):
         icon_px = self._icon_px(folder)
         text_pt = self._text_pt(folder)
         text_h = text_height_for_point_size(text_pt)
-        return max(icon_px + text_h + 8, icon_px + 24)
+        return max(icon_px + 2 * text_h + 8, icon_px + 24)
 
-    @staticmethod
-    def _tune_request_combo(combo: QtWidgets.QComboBox) -> None:
+    def _tune_request_combo(self, combo: QtWidgets.QComboBox) -> None:
         font = combo.font()
-        font.setPointSize(max(font.pointSize(), 11))
+        font.setPointSize(max(self._main_text_pt(), 10))
         combo.setFont(font)
 
     def _calculate_profit(self) -> None:

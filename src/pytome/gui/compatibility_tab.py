@@ -55,13 +55,21 @@ class CompatibilityCellDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class VerticalLabel(QtWidgets.QWidget):
-    def __init__(self, text: str, parent=None) -> None:
+    def __init__(self, text: str, point_size: int = 10, parent=None) -> None:
         super().__init__(parent)
         self._text = text
+        self._point_size = point_size
+
+    def set_point_size(self, pt: int) -> None:
+        self._point_size = max(6, min(24, pt))
+        self.update()
 
     def paintEvent(self, a0) -> None:
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        font = painter.font()
+        font.setPointSize(self._point_size)
+        painter.setFont(font)
         painter.translate(0, self.height())
         painter.rotate(-90)
         rect = QtCore.QRect(0, 0, self.height(), self.width())
@@ -70,23 +78,29 @@ class VerticalLabel(QtWidgets.QWidget):
 
 
 class CompatibilityTab(QtWidgets.QWidget):
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
+    def __init__(self, app=None) -> None:
+        super().__init__(app)
+        self.app = app
         self.icon_cache = IconCache()
-        self.cell_size = 32
-        self.header_icon_size = 32
-        self.type_header_height = 32
-        self.type_header_width = 32
-        self.icon_header_height = 32
-        self.icon_header_width = 32
         self.separator_width = 2
-        self.checkbox_width = 32
         self.highlight_row_color = "#aac8ff"
         self.highlight_col_color = "#ffe08a"
         self.checkbox_map: list[QtWidgets.QAbstractButton] = []
         self.top_icon_labels: list[QtWidgets.QLabel] = []
-        self.left_icon_labels: list[QtWidgets.QLabel] = []
+        self._vertical_labels: list[VerticalLabel] = []
+        self._top_type_items: list[QtWidgets.QTableWidgetItem] = []
         self._build_ui()
+
+    def _cell_px(self) -> int:
+        return max(16, min(96, int(getattr(self.app, "compatibility_matrix_cell_px", 32))))
+
+    def _icon_px(self) -> int:
+        """Icon size slightly smaller than cell for padding."""
+        return max(12, self._cell_px() - 6)
+
+    def _text_pt(self) -> int:
+        cell = self._cell_px()
+        return max(6, min(24, cell * 3 // 8))
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
@@ -144,20 +158,31 @@ class CompatibilityTab(QtWidgets.QWidget):
         return effects
 
     def _build_headers(self, ordered: list[Effects]) -> None:
+        self._vertical_labels.clear()
+        self._top_type_items.clear()
+        cell_px = self._cell_px()
+        icon_px = self._icon_px()
+        text_pt = self._text_pt()
+
         groups = self._group_ranges(ordered)
         for start, end, effect_type in groups:
             span_len = end - start
             top_item = QtWidgets.QTableWidgetItem(effect_type.name)
             top_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            font = top_item.font()
+            font.setPointSize(text_pt)
+            top_item.setFont(font)
             self.top_table.setItem(0, start, top_item)
             self.top_table.setSpan(0, start, 1, span_len)
+            self._top_type_items.append(top_item)
 
-            vertical = VerticalLabel(effect_type.name)
+            vertical = VerticalLabel(effect_type.name, point_size=text_pt)
+            self._vertical_labels.append(vertical)
             self.left_table.setCellWidget(start, 0, vertical)
             self.left_table.setSpan(start, 0, span_len, 1)
 
         for idx, effect in enumerate(ordered):
-            pixmap = self.icon_cache.pixmap("effects", effect.effect_name, self.header_icon_size)
+            pixmap = self.icon_cache.pixmap("effects", effect.effect_name, icon_px)
             icon_label = QtWidgets.QLabel()
             icon_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             if pixmap:
@@ -166,25 +191,22 @@ class CompatibilityTab(QtWidgets.QWidget):
             self.top_table.setCellWidget(1, idx, icon_label)
             self.top_icon_labels.append(icon_label)
 
-            left_icon = QtWidgets.QLabel()
-            left_icon.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            if pixmap:
-                left_icon.setPixmap(pixmap)
-            left_icon.setToolTip(effect.effect_name)
-            checkbox_button = QtWidgets.QPushButton()
-            checkbox_button.setCheckable(True)
-            checkbox_button.setChecked(False)
-            checkbox_button.setMinimumSize(self.checkbox_width - 2, self.cell_size - 2)
-            checkbox_button.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
-            checkbox_button.clicked.connect(self._update_highlights)
-            checkbox_wrapper = QtWidgets.QWidget()
-            checkbox_layout = QtWidgets.QHBoxLayout(checkbox_wrapper)
-            checkbox_layout.setContentsMargins(1, 1, 1, 1)
-            checkbox_layout.addWidget(checkbox_button)
-            self.left_table.setCellWidget(idx, 1, checkbox_wrapper)
-            self.left_table.setCellWidget(idx, 2, left_icon)
-            self.checkbox_map.append(checkbox_button)
-            self.left_icon_labels.append(left_icon)
+            select_btn = QtWidgets.QPushButton()
+            select_btn.setCheckable(True)
+            select_btn.setChecked(False)
+            select_btn.setSizePolicy(
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Expanding,
+            )
+            select_btn.setToolTip(effect.effect_name)
+            select_btn.clicked.connect(self._update_highlights)
+            icon = self.icon_cache.icon("effects", effect.effect_name, icon_px)
+            if icon:
+                select_btn.setIcon(icon)
+                select_btn.setIconSize(QtCore.QSize(icon_px, icon_px))
+            select_btn.setFlat(True)
+            self.left_table.setCellWidget(idx, 1, select_btn)
+            self.checkbox_map.append(select_btn)
 
     def _build_cells(self, ordered: list[Effects]) -> None:
         for row_idx, row_effect in enumerate(ordered):
@@ -215,38 +237,36 @@ class CompatibilityTab(QtWidgets.QWidget):
         return groups
 
     def _configure_tables(self, count: int) -> None:
+        cell_px = self._cell_px()
         self.corner_table.setRowCount(2)
-        self.corner_table.setColumnCount(3)
-        self.corner_table.setFixedWidth(self.type_header_width + self.checkbox_width + self.icon_header_width + 2)
-        self.corner_table.setFixedHeight(self.type_header_height + self.icon_header_height + 2)
-        for row in range(2):
-            height = self.type_header_height if row == 0 else self.icon_header_height
-            self.corner_table.setRowHeight(row, height)
-        self.corner_table.setColumnWidth(0, self.type_header_width)
-        self.corner_table.setColumnWidth(1, self.checkbox_width)
-        self.corner_table.setColumnWidth(2, self.icon_header_width)
+        self.corner_table.setColumnCount(2)
+        self.corner_table.setFixedWidth(cell_px * 2 + 2)
+        self.corner_table.setFixedHeight(cell_px * 2 + 2)
+        self.corner_table.setRowHeight(0, cell_px)
+        self.corner_table.setRowHeight(1, cell_px)
+        self.corner_table.setColumnWidth(0, cell_px)
+        self.corner_table.setColumnWidth(1, cell_px)
 
         self.top_table.setRowCount(2)
         self.top_table.setColumnCount(count)
-        self.top_table.setFixedHeight(self.type_header_height + self.icon_header_height + 2)
-        self.top_table.setRowHeight(0, self.type_header_height)
-        self.top_table.setRowHeight(1, self.icon_header_height)
+        self.top_table.setFixedHeight(cell_px * 2 + 2)
+        self.top_table.setRowHeight(0, cell_px)
+        self.top_table.setRowHeight(1, cell_px)
 
         self.left_table.setRowCount(count)
-        self.left_table.setColumnCount(3)
-        self.left_table.setFixedWidth(self.type_header_width + self.checkbox_width + self.icon_header_width + 2)
-        self.left_table.setColumnWidth(0, self.type_header_width)
-        self.left_table.setColumnWidth(1, self.checkbox_width)
-        self.left_table.setColumnWidth(2, self.icon_header_width)
+        self.left_table.setColumnCount(2)
+        self.left_table.setFixedWidth(cell_px * 2 + 2)
+        self.left_table.setColumnWidth(0, cell_px)
+        self.left_table.setColumnWidth(1, cell_px)
 
         self.body_table.setRowCount(count)
         self.body_table.setColumnCount(count)
 
         for idx in range(count):
-            self.top_table.setColumnWidth(idx, self.cell_size)
-            self.body_table.setColumnWidth(idx, self.cell_size)
-            self.left_table.setRowHeight(idx, self.cell_size)
-            self.body_table.setRowHeight(idx, self.cell_size)
+            self.top_table.setColumnWidth(idx, cell_px)
+            self.body_table.setColumnWidth(idx, cell_px)
+            self.left_table.setRowHeight(idx, cell_px)
+            self.body_table.setRowHeight(idx, cell_px)
 
     def _sync_scrollbars(self) -> None:
         body_h = self.body_table.horizontalScrollBar()
@@ -281,11 +301,11 @@ class CompatibilityTab(QtWidgets.QWidget):
                 label.setStyleSheet(f"background-color: {self.highlight_col_color};")
             else:
                 label.setStyleSheet("")
-        for idx, label in enumerate(self.left_icon_labels):
+        for idx, btn in enumerate(self.checkbox_map):
             if idx in selected:
-                label.setStyleSheet(f"background-color: {self.highlight_row_color};")
+                btn.setStyleSheet(f"background-color: {self.highlight_row_color};")
             else:
-                label.setStyleSheet("")
+                btn.setStyleSheet("")
         if hasattr(self, "_body_delegate"):
             self._body_delegate.set_highlights(set(selected), accepted_cols)
             viewport = self.body_table.viewport()
@@ -301,3 +321,32 @@ class CompatibilityTab(QtWidgets.QWidget):
         delegate = CompatibilityCellDelegate(boundaries, self.separator_width, self.body_table)
         self.body_table.setItemDelegate(delegate)
         self._body_delegate = delegate
+
+    def apply_options(self) -> None:
+        cell_px = self._cell_px()
+        icon_px = self._icon_px()
+        text_pt = self._text_pt()
+        count = len(self.ordered_effects)
+
+        self._configure_tables(count)
+
+        for vl in self._vertical_labels:
+            vl.set_point_size(text_pt)
+
+        for item in self._top_type_items:
+            font = item.font()
+            font.setPointSize(text_pt)
+            item.setFont(font)
+
+        for idx, label in enumerate(self.top_icon_labels):
+            effect = self.ordered_effects[idx]
+            pixmap = self.icon_cache.pixmap("effects", effect.effect_name, icon_px)
+            if pixmap:
+                label.setPixmap(pixmap)
+
+        for idx, btn in enumerate(self.checkbox_map):
+            effect = self.ordered_effects[idx]
+            icon = self.icon_cache.icon("effects", effect.effect_name, icon_px)
+            if icon:
+                btn.setIcon(icon)
+                btn.setIconSize(QtCore.QSize(icon_px, icon_px))

@@ -166,10 +166,9 @@ class DullLowlanderTab(QtWidgets.QWidget):
         self._active_base: PotionBases | None = None
         self._scroll_by_base: dict[PotionBases, tuple[int, int]] = {}
         self._selected_key_by_base: dict[PotionBases, tuple[Effects, Ingredients]] = {}
-        self._cell_px = 36
-        # 3 icons with 2px gaps: 3*cell + 2*2 = cell*3 + 4
-        self._left_header_px = self._cell_px * 3 + 4
         self._boundary_cols = self._build_boundary_cols(len(Ingredients))
+        self.base_label = None
+        self.update_btn = None
         self._build_ui()
         self._active_base = self._selected_base()
         self._load_or_update_data()
@@ -185,25 +184,40 @@ class DullLowlanderTab(QtWidgets.QWidget):
             boundaries.add(55)
         return boundaries
 
+    def _cell_px(self) -> int:
+        return max(16, min(96, int(getattr(self.app, "dull_lowlander_icon_px", 36))))
+
+    def _left_header_px(self) -> int:
+        return self._cell_px() * 3 + 4
+
+    def _main_text_pt(self) -> int:
+        return max(8, min(24, int(getattr(self.app, "query_main_text_pt", 12))))
+
+    def _cell_text_pt(self) -> int:
+        """Point size for table numbers and Legend; fits '99**' in cell."""
+        cp = self._cell_px()
+        return max(8, min(24, cp * 11 // 30))
+
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
         controls = QtWidgets.QHBoxLayout()
-        controls.addWidget(QtWidgets.QLabel("Base"))
+        self.base_label = QtWidgets.QLabel("Base")
+        controls.addWidget(self.base_label)
         self.base_select = QtWidgets.QComboBox()
         self.base_select.addItems(["Water", "Oil", "Wine"])
         controls.addWidget(self.base_select)
         controls.addStretch(1)
         self.source_label = QtWidgets.QLabel("")
         controls.addWidget(self.source_label)
-        update_btn = QtWidgets.QPushButton("Update")
-        controls.addWidget(update_btn)
+        self.update_btn = QtWidgets.QPushButton("Update")
+        controls.addWidget(self.update_btn)
         layout.addLayout(controls)
 
         grid = QtWidgets.QGridLayout()
         layout.addLayout(grid, 1)
 
         self.legend_btn = QtWidgets.QPushButton("Legend")
-        self.legend_btn.setMinimumSize(self._left_header_px, self._cell_px + 2)
+        self.legend_btn.setMinimumSize(self._left_header_px(), self._cell_px() + 2)
         self.legend_btn.clicked.connect(self._show_legend)
         grid.addWidget(self.legend_btn, 0, 0)
 
@@ -239,7 +253,7 @@ class DullLowlanderTab(QtWidgets.QWidget):
         grid.addWidget(self.h_scroll, 2, 0, 1, 2)
 
         self.base_select.currentTextChanged.connect(self._on_base_changed)
-        update_btn.clicked.connect(self._update_data)
+        self.update_btn.clicked.connect(self._update_data)
 
         actions = QtWidgets.QHBoxLayout()
         self.selected_cell_label = QtWidgets.QLabel("Selected: -")
@@ -275,6 +289,31 @@ class DullLowlanderTab(QtWidgets.QWidget):
             body_v.valueChanged.connect(self.v_scroll.setValue)
             body_v.rangeChanged.connect(self.v_scroll.setRange)
             self.v_scroll.valueChanged.connect(body_v.setValue)
+
+    def apply_options(self) -> None:
+        pt = self._main_text_pt()
+        cell_pt = self._cell_text_pt()
+        for w in (
+            self.base_label,
+            self.base_select,
+            self.source_label,
+            self.update_btn,
+            self.selected_cell_label,
+            self.update_cell_btn,
+            self.view_details_btn,
+            self.open_plotter_btn,
+            self.open_discord_btn,
+        ):
+            if w is not None:
+                font = w.font()
+                font.setPointSize(pt)
+                w.setFont(font)
+        font = self.legend_btn.font()
+        font.setPointSize(cell_pt)
+        self.legend_btn.setFont(font)
+        self.legend_btn.setFixedSize(self._left_header_px() + 2, self._cell_px() + 4)
+        if self._active_base is not None:
+            self._rebuild_table()
 
     def _selected_base(self) -> PotionBases:
         return PotionBases[self.base_select.currentText()]
@@ -372,14 +411,14 @@ class DullLowlanderTab(QtWidgets.QWidget):
     def _effect_header_pixmap(self, base: PotionBases, effect: Effects) -> QtGui.QPixmap | None:
         tier = effect.dull_reachable_tier(base)
         tier = max(1, min(3, tier))
-        icon = self.icon_cache.pixmap("effects", effect.effect_name, self._cell_px)
+        icon = self.icon_cache.pixmap("effects", effect.effect_name, self._cell_px())
         if icon is None:
             return None
-        canvas = QtGui.QPixmap(self._left_header_px, self._cell_px)
+        canvas = QtGui.QPixmap(self._left_header_px(), self._cell_px())
         canvas.fill(QtCore.Qt.GlobalColor.transparent)
         painter = QtGui.QPainter(canvas)
         for idx in range(tier):
-            painter.drawPixmap(idx * (self._cell_px + 2), 0, icon)
+            painter.drawPixmap(idx * (self._cell_px() + 2), 0, icon)
         painter.end()
         return canvas
 
@@ -840,20 +879,20 @@ class DullLowlanderTab(QtWidgets.QWidget):
         col_count = len(ingredient_list)
         self.top_header_table.setRowCount(1)
         self.top_header_table.setColumnCount(col_count)
-        self.top_header_table.setRowHeight(0, self._cell_px + 2)
+        self.top_header_table.setRowHeight(0, self._cell_px() + 2)
         self.left_header_table.setRowCount(row_count)
         self.left_header_table.setColumnCount(1)
         self.body_table.setRowCount(row_count)
         self.body_table.setColumnCount(col_count)
 
-        self.top_header_table.setFixedHeight(self._cell_px + 4)
-        self.left_header_table.setFixedWidth(self._left_header_px + 2)
-        self.legend_btn.setFixedSize(self._left_header_px + 2, self._cell_px + 4)
+        self.top_header_table.setFixedHeight(self._cell_px() + 4)
+        self.left_header_table.setFixedWidth(self._left_header_px() + 2)
+        self.legend_btn.setFixedSize(self._left_header_px() + 2, self._cell_px() + 4)
 
         for col, ingredient in enumerate(ingredient_list):
-            self.top_header_table.setColumnWidth(col, self._cell_px + 2)
-            self.body_table.setColumnWidth(col, self._cell_px + 2)
-            icon = self.icon_cache.pixmap("ingredients", ingredient.ingredient_name, self._cell_px)
+            self.top_header_table.setColumnWidth(col, self._cell_px() + 2)
+            self.body_table.setColumnWidth(col, self._cell_px() + 2)
+            icon = self.icon_cache.pixmap("ingredients", ingredient.ingredient_name, self._cell_px())
             label = QtWidgets.QLabel()
             label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             if icon is not None:
@@ -864,9 +903,9 @@ class DullLowlanderTab(QtWidgets.QWidget):
             self.top_header_table.setCellWidget(0, col, label)
 
         for row, effect in enumerate(effects_sorted):
-            self.left_header_table.setRowHeight(row, self._cell_px + 2)
-            self.body_table.setRowHeight(row, self._cell_px + 2)
-            self.left_header_table.setColumnWidth(0, self._left_header_px)
+            self.left_header_table.setRowHeight(row, self._cell_px() + 2)
+            self.body_table.setRowHeight(row, self._cell_px() + 2)
+            self.left_header_table.setColumnWidth(0, self._left_header_px())
             effect_label = QtWidgets.QLabel()
             effect_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
             pixmap = self._effect_header_pixmap(base, effect)
@@ -883,11 +922,11 @@ class DullLowlanderTab(QtWidgets.QWidget):
                     continue
                 text = cell.value_text or "-"
                 btn = QtWidgets.QPushButton(text)
-                btn.setMinimumSize(self._cell_px, self._cell_px)
-                btn.setMaximumSize(self._cell_px, self._cell_px)
+                btn.setMinimumSize(self._cell_px(), self._cell_px())
+                btn.setMaximumSize(self._cell_px(), self._cell_px())
                 font = btn.font()
                 font.setBold(True)
-                font.setPointSize(max(font.pointSize(), 10))
+                font.setPointSize(self._cell_text_pt())
                 btn.setFont(font)
                 bg = _status_bg_color(cell.status)
                 recipe_hash = get_recipe_hash(cell.recipe) if cell.recipe is not None else None
@@ -913,8 +952,8 @@ class DullLowlanderTab(QtWidgets.QWidget):
                 self.body_table.setCellWidget(row, col, btn)
         for col in self._boundary_cols:
             if 0 <= col < col_count:
-                self.top_header_table.setColumnWidth(col, self._cell_px + 4)
-                self.body_table.setColumnWidth(col, self._cell_px + 4)
+                self.top_header_table.setColumnWidth(col, self._cell_px() + 4)
+                self.body_table.setColumnWidth(col, self._cell_px() + 4)
         if preserve_selected_key is not None:
             base_key, effect_key, ingredient_key = preserve_selected_key
             if base_key == base:

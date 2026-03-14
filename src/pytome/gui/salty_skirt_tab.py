@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..effects import Effects
+from ..effects import Effects, PotionBases
 from ..ingredients import Ingredients, Salts
 from ..salty_skirt_optimizer import OrderRecipeChoice, SaltySkirtReport, build_salty_skirt_report
+from .font_utils import text_height_for_point_size
 from .icons import IconCache
 
 
@@ -17,6 +18,51 @@ class SaltySkirtTab(QtWidgets.QWidget):
         self.icon_cache = IconCache()
         self._report: SaltySkirtReport | None = None
         self._build_ui()
+
+    def _main_text_pt(self) -> int:
+        return max(8, min(24, getattr(self.app, "query_main_text_pt", 12)))
+
+    def _header_height(self) -> int:
+        return max(36, min(96, getattr(self.app, "salty_skirt_header_height_px", 58)))
+
+    def _row_height(self) -> int:
+        return max(24, min(72, getattr(self.app, "salty_skirt_row_height_px", 40)))
+
+    def _divider_height(self) -> int:
+        return max(20, min(56, getattr(self.app, "salty_skirt_divider_height_px", 28)))
+
+    def _divider_text_pt(self) -> int:
+        return max(8, min(14, (self._divider_height() * 3) // 12))
+
+    def _header_icon_px(self) -> int:
+        return max(16, min(48, self._header_height() - 6))
+
+    def _header_text_pt(self) -> int:
+        return max(9, min(16, (self._header_height() * 3) // 12))
+
+    def _row_icon_px(self) -> int:
+        return max(12, min(36, self._row_height() - 6))
+
+    def _row_text_pt(self) -> int:
+        return max(9, min(16, (self._row_height() * 3) // 12))
+
+    def _apply_main_text_style(self) -> None:
+        pt = self._main_text_pt()
+        font = QtGui.QFont()
+        font.setPointSize(pt)
+        for w in (
+            self.target_salt_select,
+            self.max_iter_edit,
+            self.cache_btn,
+            self.force_btn,
+            self.status_label,
+        ):
+            w.setFont(font)
+        for label in self.findChildren(QtWidgets.QLabel):
+            if label.parent() is self:
+                label.setFont(font)
+        for box in self.findChildren(QtWidgets.QGroupBox):
+            box.setFont(font)
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
@@ -84,25 +130,27 @@ class SaltySkirtTab(QtWidgets.QWidget):
         h_scroll: QtWidgets.QScrollBar | None,
         v_scroll: QtWidgets.QScrollBar | None,
     ) -> None:
+        h_px = self._header_height()
+        r_px = self._row_height()
         for table in (header_table, body_table):
             table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
             table.setWordWrap(False)
             table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
             table.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
             font = table.font()
-            font.setPointSize(max(font.pointSize(), 11))
+            font.setPointSize(self._row_text_pt())
             table.setFont(font)
             header = table.verticalHeader()
             if header is not None:
                 header.setVisible(False)
-                header.setDefaultSectionSize(40)
+                header.setDefaultSectionSize(r_px)
             h_header = table.horizontalHeader()
             if h_header is not None:
                 h_header.setVisible(False)
         header_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         header_table.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        header_table.setIconSize(QtCore.QSize(32, 32))
-        header_table.setFixedHeight(58)
+        header_table.setIconSize(QtCore.QSize(self._header_icon_px(), self._header_icon_px()))
+        header_table.setFixedHeight(h_px)
         body_table.setAlternatingRowColors(True)
         if h_scroll is None:
             body_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -128,8 +176,12 @@ class SaltySkirtTab(QtWidgets.QWidget):
                 v_scroll.valueChanged.connect(v_body.setValue)
 
     def apply_options(self) -> None:
-        # no-op for now; reserved for future icon-based selectors.
-        return
+        self._apply_main_text_style()
+        self._setup_split_table(self.summary_header, self.summary_table, None, None)
+        self._setup_split_table(self.detail_header, self.detail_table, self.detail_h_scroll, self.detail_v_scroll)
+        if self._report is not None:
+            self._refresh_tables(run_mode="cache" if self._report.from_cache else "force")
+            self._refresh_selected_details()
 
     def _calculate(self, force_refresh: bool, run_mode: str) -> None:
         max_iter: int | None = None
@@ -166,9 +218,10 @@ class SaltySkirtTab(QtWidgets.QWidget):
         self._build_summary_columns(relevant_ingredients, relevant_salts)
 
         salt_price = {salt: float(report.per_salt_optima[salt].ingredient_cost_per_unit) for salt in Salts}
+        r_px = self._row_height()
         self.summary_table.setRowCount(len(Salts))
         for row in range(len(Salts)):
-            self.summary_table.setRowHeight(row, 40)
+            self.summary_table.setRowHeight(row, r_px)
         for salt in Salts:
             row = int(salt)
             vector = report.order_vectors[salt]
@@ -201,27 +254,52 @@ class SaltySkirtTab(QtWidgets.QWidget):
         else:
             status_prefix = "Cache miss; calculated fresh"
         self.status_label.setText(f"{status_prefix} (iterations={report.iteration_count}, hidden recipes ignored).")
-        self.summary_table.setFixedHeight(self.summary_table.rowCount() * 40 + 4)
-        self.summary_header.setFixedHeight(58)
-        self.summary_table.setMinimumWidth(980)
-        self.summary_header.setMinimumWidth(980)
+        h_px = self._header_height()
+        r_px = self._row_height()
+        scroll_reserve = 20
+        self.summary_table.setFixedHeight(
+            self.summary_table.rowCount() * r_px + 4 + scroll_reserve
+        )
+        self.summary_header.setFixedHeight(h_px)
+
+    def _base_icon_widget(self, base: int) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(widget)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        base_enum = PotionBases(base)
+        base_name = base_enum.name
+        icon_label = QtWidgets.QLabel()
+        pixmap = self.icon_cache.pixmap("bases", base_name, self._row_icon_px())
+        if pixmap is not None:
+            icon_label.setPixmap(pixmap)
+        icon_label.setToolTip(base_name)
+        layout.addWidget(icon_label)
+        return widget
 
     def _effect_widget(self, tiers: tuple[int, ...]) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(widget)
         layout.setContentsMargins(2, 0, 2, 0)
         layout.setSpacing(4)
+        icon_count = 0
+        max_icons = 5
         for idx, tier in enumerate(tiers):
             if int(tier) <= 0:
                 continue
             effect = Effects(idx)
             for _ in range(int(tier)):
+                if icon_count >= max_icons:
+                    break
                 icon_label = QtWidgets.QLabel()
-                pixmap = self.icon_cache.pixmap("effects", effect.effect_name, 32)
+                pixmap = self.icon_cache.pixmap("effects", effect.effect_name, self._row_icon_px())
                 if pixmap is not None:
                     icon_label.setPixmap(pixmap)
                 icon_label.setToolTip(effect.effect_name)
                 layout.addWidget(icon_label)
+                icon_count += 1
+            if icon_count >= max_icons:
+                break
         layout.addStretch(1)
         return widget
 
@@ -250,8 +328,8 @@ class SaltySkirtTab(QtWidgets.QWidget):
             if row_type == "group":
                 group_name = str(payload)
                 self.detail_table.setSpan(row, 0, 1, self.detail_table.columnCount())
-                self._set_center_item(self.detail_table, row, 0, group_name)
-                self.detail_table.setRowHeight(row, 24)
+                self._set_center_item(self.detail_table, row, 0, group_name, divider=True)
+                self.detail_table.setRowHeight(row, self._divider_height())
                 continue
             choice = payload
             assert isinstance(choice, OrderRecipeChoice)
@@ -265,7 +343,7 @@ class SaltySkirtTab(QtWidgets.QWidget):
             recipe_ingredient_equiv = float(sum(float(v) for v in recipe.ingredient_num_list)) + salt_equiv
 
             self._set_center_item(self.detail_table, row, 0, str(displayed_choice_id))
-            self._set_center_item(self.detail_table, row, 1, getattr(recipe.base, "name", str(recipe.base)))
+            self.detail_table.setCellWidget(row, 1, self._base_icon_widget(recipe.base))
             self.detail_table.setCellWidget(row, 2, self._effect_widget(tuple(int(v) for v in recipe.effect_tier_list)))
             col = 3
             for ingredient in relevant_ingredients:
@@ -277,7 +355,7 @@ class SaltySkirtTab(QtWidgets.QWidget):
                 self._set_center_item(self.detail_table, row, col, self._format_number(amount))
                 col += 1
             self._set_center_item(self.detail_table, row, col, self._format_number(recipe_ingredient_equiv))
-            self.detail_table.setRowHeight(row, 40)
+            self.detail_table.setRowHeight(row, self._row_height())
 
     def _format_number(self, value: float) -> str:
         if abs(value) <= 1e-9:
@@ -287,9 +365,49 @@ class SaltySkirtTab(QtWidgets.QWidget):
             return str(int(rounded))
         return f"{value:.3f}"
 
-    def _set_center_item(self, table: QtWidgets.QTableWidget, row: int, col: int, text: str) -> None:
+    def _text_width(self, text: str, pt: int) -> int:
+        font = QtGui.QFont()
+        font.setPointSize(max(1, min(24, pt)))
+        return QtGui.QFontMetrics(font).horizontalAdvance(text) + 8
+
+    def _summary_column_widths(
+        self, relevant_ingredients: list[Ingredients], relevant_salts: list[Salts]
+    ) -> list[int]:
+        r_pt = self._row_text_pt()
+        salt_w = max(
+            self._text_width("Philosopher's Salt", self._row_text_pt()),
+            self._text_width("Salt", self._header_text_pt()),
+        )
+        produced_w = max(self._text_width("99999", r_pt), self._text_width("Produced", self._header_text_pt()))
+        ings_w = max(self._text_width("999.999", r_pt), self._text_width("Ings", self._header_text_pt()))
+        yield_w = max(self._text_width("9999.999", r_pt), self._text_width("Yield", self._header_text_pt()))
+        return [salt_w, produced_w, ings_w, yield_w]
+
+    def _detail_column_widths(
+        self, relevant_ingredients: list[Ingredients], relevant_salts: list[Salts]
+    ) -> list[int]:
+        r_pt = self._row_text_pt()
+        num_w = max(self._text_width("99", self._row_text_pt()), self._text_width("#", self._header_text_pt()))
+        base_w = max(self._row_icon_px() + 8, self._text_width("Base", self._header_text_pt()))
+        recipe_w = max(
+            self._row_icon_px() * 5 + 16,
+            self._text_width("Recipe", self._header_text_pt()),
+        )
+        return [num_w, base_w, recipe_w]
+
+    def _set_center_item(
+        self, table: QtWidgets.QTableWidget, row: int, col: int, text: str, *, divider: bool = False
+    ) -> None:
         item = QtWidgets.QTableWidgetItem(text)
         item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        if divider:
+            font = QtGui.QFont()
+            font.setPointSize(self._divider_text_pt())
+            item.setFont(font)
+        else:
+            font = QtGui.QFont()
+            font.setPointSize(self._row_text_pt())
+            item.setFont(font)
         table.setItem(row, col, item)
 
     def _collect_relevant_axes(self, report: SaltySkirtReport) -> tuple[list[Ingredients], list[Salts]]:
@@ -304,65 +422,109 @@ class SaltySkirtTab(QtWidgets.QWidget):
                     salt_set.add(Salts(idx))
         return sorted(ingredient_set, key=int), sorted(salt_set, key=int)
 
-    def _set_header_icon(self, header_table: QtWidgets.QTableWidget, col: int, folder: str, name: str, width: int) -> None:
+    def _set_header_icon(
+        self,
+        header_table: QtWidgets.QTableWidget,
+        body_table: QtWidgets.QTableWidget,
+        col: int,
+        folder: str,
+        name: str,
+        width: int,
+    ) -> None:
         label = QtWidgets.QLabel()
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        icon = self.icon_cache.pixmap(folder, name, 32)
+        icon = self.icon_cache.pixmap(folder, name, self._header_icon_px())
         if icon is not None:
             label.setPixmap(icon)
         label.setToolTip(name)
         header_table.setCellWidget(0, col, label)
         header_table.setColumnWidth(col, width)
+        body_table.setColumnWidth(col, width)
 
-    def _set_header_text(self, header_table: QtWidgets.QTableWidget, col: int, text: str, width: int) -> None:
+    def _set_header_text(
+        self,
+        header_table: QtWidgets.QTableWidget,
+        body_table: QtWidgets.QTableWidget,
+        col: int,
+        text: str,
+        width: int,
+    ) -> None:
         label = QtWidgets.QLabel(text)
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         font = label.font()
-        font.setPointSize(max(font.pointSize(), 11))
+        font.setPointSize(self._header_text_pt())
         label.setFont(font)
         header_table.setCellWidget(0, col, label)
         header_table.setColumnWidth(col, width)
+        body_table.setColumnWidth(col, width)
 
     def _build_summary_columns(self, relevant_ingredients: list[Ingredients], relevant_salts: list[Salts]) -> None:
-        base_headers = ["Salt", "Produced", "IngEq", "Yield"]
+        base_headers = ["Salt", "Produced", "Ings", "Yield"]
         col_count = len(base_headers) + len(relevant_ingredients) + len(relevant_salts)
         self.summary_header.setColumnCount(col_count)
         self.summary_header.setRowCount(1)
-        self.summary_header.setRowHeight(0, 54)
+        self.summary_header.setRowHeight(0, self._header_height())
         self.summary_table.setColumnCount(col_count)
-        base_widths = [110, 100, 110, 126]
+        base_widths = self._summary_column_widths(relevant_ingredients, relevant_salts)
         for idx, text in enumerate(base_headers):
-            self._set_header_text(self.summary_header, idx, text, base_widths[idx])
-            self.summary_table.setColumnWidth(idx, base_widths[idx])
+            self._set_header_text(
+                self.summary_header, self.summary_table, idx, text, base_widths[idx]
+            )
         col = len(base_headers)
+        r_pt = self._row_text_pt()
+        icon_w = max(self._header_icon_px() + 8, 50)
         for ingredient in relevant_ingredients:
-            self._set_header_icon(self.summary_header, col, "ingredients", ingredient.ingredient_name, 62)
-            self.summary_table.setColumnWidth(col, 62)
+            w = max(icon_w, self._text_width("999", r_pt))
+            self._set_header_icon(
+                self.summary_header, self.summary_table, col,
+                "ingredients", ingredient.ingredient_name, w
+            )
             col += 1
         for salt in relevant_salts:
-            self._set_header_icon(self.summary_header, col, "salts", salt.salt_name, 92)
-            self.summary_table.setColumnWidth(col, 92)
+            w = max(icon_w, self._text_width("999999", r_pt))
+            self._set_header_icon(
+                self.summary_header, self.summary_table, col,
+                "salts", salt.salt_name, w
+            )
             col += 1
+        self._sync_table_widths(self.summary_header, self.summary_table)
+
+    def _sync_table_widths(
+        self, header_table: QtWidgets.QTableWidget, body_table: QtWidgets.QTableWidget
+    ) -> None:
+        """Ensure header and body share the same total width (sum of column widths)."""
+        total = sum(header_table.columnWidth(c) for c in range(header_table.columnCount()))
+        header_table.setMinimumWidth(total)
+        body_table.setMinimumWidth(total)
 
     def _build_detail_columns(self, relevant_ingredients: list[Ingredients], relevant_salts: list[Salts]) -> None:
         base_headers = ["#", "Base", "Recipe"]
         col_count = len(base_headers) + len(relevant_ingredients) + len(relevant_salts) + 1
         self.detail_header.setColumnCount(col_count)
         self.detail_header.setRowCount(1)
-        self.detail_header.setRowHeight(0, 54)
+        self.detail_header.setRowHeight(0, self._header_height())
         self.detail_table.setColumnCount(col_count)
-        base_widths = [46, 90, 188]
+        base_widths = self._detail_column_widths(relevant_ingredients, relevant_salts)
         for idx, text in enumerate(base_headers):
-            self._set_header_text(self.detail_header, idx, text, base_widths[idx])
-            self.detail_table.setColumnWidth(idx, base_widths[idx])
+            self._set_header_text(self.detail_header, self.detail_table, idx, text, base_widths[idx])
+        r_pt = self._row_text_pt()
+        icon_w = max(self._header_icon_px() + 8, 50)
         col = len(base_headers)
+        h_pt = self._header_text_pt()
         for ingredient in relevant_ingredients:
-            self._set_header_icon(self.detail_header, col, "ingredients", ingredient.ingredient_name, 62)
-            self.detail_table.setColumnWidth(col, 62)
+            w = max(icon_w, self._text_width("9", r_pt))
+            self._set_header_icon(
+                self.detail_header, self.detail_table, col,
+                "ingredients", ingredient.ingredient_name, w
+            )
             col += 1
         for salt in relevant_salts:
-            self._set_header_icon(self.detail_header, col, "salts", salt.salt_name, 92)
-            self.detail_table.setColumnWidth(col, 92)
+            w = max(icon_w, self._text_width("9999", r_pt))
+            self._set_header_icon(
+                self.detail_header, self.detail_table, col,
+                "salts", salt.salt_name, w
+            )
             col += 1
-        self._set_header_text(self.detail_header, col, "IngEq", 116)
-        self.detail_table.setColumnWidth(col, 116)
+        ings_w = max(self._text_width("Ings", h_pt), self._text_width("9.999", r_pt), 70)
+        self._set_header_text(self.detail_header, self.detail_table, col, "Ings", ings_w)
+        self._sync_table_widths(self.detail_header, self.detail_table)

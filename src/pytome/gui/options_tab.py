@@ -9,12 +9,20 @@ class OptionsTab(QtWidgets.QWidget):
     def __init__(self, app) -> None:
         super().__init__()
         self.app = app
+        self._general_sliders: dict[str, QtWidgets.QSlider] = {}
+        self._general_edits: dict[str, QtWidgets.QLineEdit] = {}
         self._icon_sliders: dict[str, QtWidgets.QSlider] = {}
         self._icon_edits: dict[str, QtWidgets.QLineEdit] = {}
         self._text_sliders: dict[str, QtWidgets.QSlider] = {}
         self._text_edits: dict[str, QtWidgets.QLineEdit] = {}
         self._query_sliders: dict[str, QtWidgets.QSlider] = {}
         self._query_edits: dict[str, QtWidgets.QLineEdit] = {}
+        self._compatibility_sliders: dict[str, QtWidgets.QSlider] = {}
+        self._compatibility_edits: dict[str, QtWidgets.QLineEdit] = {}
+        self._dull_lowlander_sliders: dict[str, QtWidgets.QSlider] = {}
+        self._dull_lowlander_edits: dict[str, QtWidgets.QLineEdit] = {}
+        self._salty_skirt_sliders: dict[str, QtWidgets.QSlider] = {}
+        self._salty_skirt_edits: dict[str, QtWidgets.QLineEdit] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -49,13 +57,24 @@ class OptionsTab(QtWidgets.QWidget):
         default_btn_row.addWidget(restore_default_btn)
         default_btn_row.addStretch(1)
         box_layout.addLayout(default_btn_row, 0, 2)
+        self._add_size_row(
+            layout=box_layout,
+            row=1,
+            title="Main text size",
+            slider_map=self._general_sliders,
+            edit_map=self._general_edits,
+            key="main_text_pt",
+            on_change=self.app.set_query_main_text_pt,
+            min_value=8,
+            max_value=24,
+        )
         folders = [
             ("ingredients", "Ingredient"),
             ("salts", "Salt"),
             ("effects", "Effect"),
             ("bases", "Base"),
         ]
-        for idx, (folder, label) in enumerate(folders, start=1):
+        for idx, (folder, label) in enumerate(folders, start=2):
             self._add_size_row(
                 layout=box_layout,
                 row=idx,
@@ -67,7 +86,7 @@ class OptionsTab(QtWidgets.QWidget):
                 min_value=12,
                 max_value=96,
             )
-        start_row = 1 + len(folders)
+        start_row = 2 + len(folders)
         for idx, (folder, label) in enumerate(folders, start=start_row):
             self._add_size_row(
                 layout=box_layout,
@@ -91,28 +110,17 @@ class OptionsTab(QtWidgets.QWidget):
         self._add_size_row(
             layout=query_box_layout,
             row=0,
-            title="Main text size",
+            title="Legendary dropdown icon px",
             slider_map=self._query_sliders,
             edit_map=self._query_edits,
-            key="main_text_pt",
-            on_change=self.app.set_query_main_text_pt,
-            min_value=8,
-            max_value=24,
-        )
-        self._add_size_row(
-            layout=query_box_layout,
-            row=1,
-            title="Legendary selector icon px",
-            slider_map=self._query_sliders,
-            edit_map=self._query_edits,
-            key="potion_icon_px",
-            on_change=self.app.set_query_potion_icon_px,
+            key="legendary_dropdown_icon_px",
+            on_change=self.app.set_legendary_dropdown_icon_px,
             min_value=12,
             max_value=96,
         )
         self._add_size_row(
             layout=query_box_layout,
-            row=2,
+            row=1,
             title="Icon view base icon px",
             slider_map=self._query_sliders,
             edit_map=self._query_edits,
@@ -123,7 +131,7 @@ class OptionsTab(QtWidgets.QWidget):
         )
         self._add_size_row(
             layout=query_box_layout,
-            row=3,
+            row=2,
             title="Icon view pagination size",
             slider_map=self._query_sliders,
             edit_map=self._query_edits,
@@ -135,8 +143,87 @@ class OptionsTab(QtWidgets.QWidget):
         query_layout.addWidget(query_box)
         query_layout.addStretch(1)
 
+        compatibility_tab = QtWidgets.QWidget()
+        compatibility_layout = QtWidgets.QVBoxLayout(compatibility_tab)
+        compatibility_box = QtWidgets.QGroupBox("Compatibility Page")
+        compatibility_box_layout = QtWidgets.QGridLayout(compatibility_box)
+        self._add_size_row(
+            layout=compatibility_box_layout,
+            row=0,
+            title="Icon and grid cell size (px)",
+            slider_map=self._compatibility_sliders,
+            edit_map=self._compatibility_edits,
+            key="matrix_cell_px",
+            on_change=self.app.set_compatibility_matrix_cell_px,
+            min_value=16,
+            max_value=96,
+        )
+        compatibility_layout.addWidget(compatibility_box)
+        compatibility_layout.addStretch(1)
+
+        dull_lowlander_tab = QtWidgets.QWidget()
+        dull_lowlander_layout = QtWidgets.QVBoxLayout(dull_lowlander_tab)
+        dull_lowlander_box = QtWidgets.QGroupBox("Dull Lowlander Page")
+        dull_lowlander_box_layout = QtWidgets.QGridLayout(dull_lowlander_box)
+        self._add_size_row(
+            layout=dull_lowlander_box_layout,
+            row=0,
+            title="Icon size (px)",
+            slider_map=self._dull_lowlander_sliders,
+            edit_map=self._dull_lowlander_edits,
+            key="icon_px",
+            on_change=self.app.set_dull_lowlander_icon_px,
+            min_value=16,
+            max_value=96,
+        )
+        dull_lowlander_layout.addWidget(dull_lowlander_box)
+        dull_lowlander_layout.addStretch(1)
+
+        salty_skirt_tab = QtWidgets.QWidget()
+        salty_skirt_layout = QtWidgets.QVBoxLayout(salty_skirt_tab)
+        salty_skirt_box = QtWidgets.QGroupBox("Salty Skirt Page")
+        salty_skirt_box_layout = QtWidgets.QGridLayout(salty_skirt_box)
+        self._add_size_row(
+            layout=salty_skirt_box_layout,
+            row=0,
+            title="Header height (px)",
+            slider_map=self._salty_skirt_sliders,
+            edit_map=self._salty_skirt_edits,
+            key="header_height_px",
+            on_change=self.app.set_salty_skirt_header_height_px,
+            min_value=36,
+            max_value=96,
+        )
+        self._add_size_row(
+            layout=salty_skirt_box_layout,
+            row=1,
+            title="Row height (px)",
+            slider_map=self._salty_skirt_sliders,
+            edit_map=self._salty_skirt_edits,
+            key="row_height_px",
+            on_change=self.app.set_salty_skirt_row_height_px,
+            min_value=24,
+            max_value=72,
+        )
+        self._add_size_row(
+            layout=salty_skirt_box_layout,
+            row=2,
+            title="Divider row height (px)",
+            slider_map=self._salty_skirt_sliders,
+            edit_map=self._salty_skirt_edits,
+            key="divider_height_px",
+            on_change=self.app.set_salty_skirt_divider_height_px,
+            min_value=20,
+            max_value=56,
+        )
+        salty_skirt_layout.addWidget(salty_skirt_box)
+        salty_skirt_layout.addStretch(1)
+
         tabs.addTab(general_tab, "General")
         tabs.addTab(query_tab, "Query")
+        tabs.addTab(compatibility_tab, "Compatibility")
+        tabs.addTab(dull_lowlander_tab, "Dull Lowlander")
+        tabs.addTab(salty_skirt_tab, "Salty Skirt")
 
         self.dropdown_mode.currentIndexChanged.connect(self._on_dropdown_mode_changed)
         save_default_btn.clicked.connect(self.app.save_current_as_defaults)
@@ -157,6 +244,12 @@ class OptionsTab(QtWidgets.QWidget):
         if idx >= 0:
             self.dropdown_mode.setCurrentIndex(idx)
         self.dropdown_mode.blockSignals(False)
+        for key, slider in self._general_sliders.items():
+            value = int(getattr(self.app, "query_main_text_pt", 12))
+            slider.blockSignals(True)
+            slider.setValue(max(8, min(24, value)))
+            slider.blockSignals(False)
+            self._general_edits[key].setText(str(slider.value()))
         icon_sizes = getattr(self.app, "selector_icon_sizes", {})
         text_sizes = getattr(self.app, "selector_text_sizes", {})
         for key, slider in self._icon_sliders.items():
@@ -175,7 +268,7 @@ class OptionsTab(QtWidgets.QWidget):
             edit.setText(str(slider.value()))
         query_values = {
             "main_text_pt": int(getattr(self.app, "query_main_text_pt", 12)),
-            "potion_icon_px": int(getattr(self.app, "query_potion_icon_px", 24)),
+            "legendary_dropdown_icon_px": int(getattr(self.app, "legendary_dropdown_icon_px", 54)),
             "icon_view_icon_px": int(getattr(self.app, "query_icon_view_icon_px", 36)),
             "icon_page_size": int(getattr(self.app, "query_icon_page_size", 15)),
         }
@@ -185,6 +278,29 @@ class OptionsTab(QtWidgets.QWidget):
             slider.setValue(value)
             slider.blockSignals(False)
             self._query_edits[key].setText(str(slider.value()))
+        compat_value = int(getattr(self.app, "compatibility_matrix_cell_px", 32))
+        for key, slider in self._compatibility_sliders.items():
+            slider.blockSignals(True)
+            slider.setValue(max(16, min(96, compat_value)))
+            slider.blockSignals(False)
+            self._compatibility_edits[key].setText(str(slider.value()))
+        dull_value = int(getattr(self.app, "dull_lowlander_icon_px", 36))
+        for key, slider in self._dull_lowlander_sliders.items():
+            slider.blockSignals(True)
+            slider.setValue(max(16, min(96, dull_value)))
+            slider.blockSignals(False)
+            self._dull_lowlander_edits[key].setText(str(slider.value()))
+        salty_values = {
+            "header_height_px": int(getattr(self.app, "salty_skirt_header_height_px", 58)),
+            "row_height_px": int(getattr(self.app, "salty_skirt_row_height_px", 40)),
+            "divider_height_px": int(getattr(self.app, "salty_skirt_divider_height_px", 28)),
+        }
+        for key, slider in self._salty_skirt_sliders.items():
+            value = salty_values.get(key, slider.value())
+            slider.blockSignals(True)
+            slider.setValue(value)
+            slider.blockSignals(False)
+            self._salty_skirt_edits[key].setText(str(slider.value()))
         self.external_data_path_edit.setText(getattr(self.app, "external_data_path", ""))
 
     def _on_dropdown_mode_changed(self, index: int) -> None:

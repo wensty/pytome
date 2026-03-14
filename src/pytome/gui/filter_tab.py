@@ -224,6 +224,57 @@ class GroupSeparatorDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
 
+# Custom role for dropdown icon; display uses setItemIcon
+_LEGENDARY_DROPDOWN_ICON_ROLE = QtCore.Qt.ItemDataRole.UserRole + 1
+
+
+class _LegendaryDropdownDelegate(QtWidgets.QStyledItemDelegate):
+    """Paints dropdown list items with large icon; combo display uses setItemIcon independently."""
+
+    def __init__(self, dropdown_px: int, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._dropdown_px = dropdown_px
+
+    def paint(
+        self,
+        painter: QtGui.QPainter | None,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        if painter is None:
+            return
+        painter.save()
+        if option.state & QtWidgets.QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, option.palette.color(QtGui.QPalette.ColorRole.Highlight))
+        elif option.state & QtWidgets.QStyle.StateFlag.State_MouseOver:
+            painter.fillRect(option.rect, option.palette.color(QtGui.QPalette.ColorRole.AlternateBase))
+        else:
+            painter.fillRect(option.rect, option.palette.color(QtGui.QPalette.ColorRole.Base))
+        painter.restore()
+        icon = index.data(_LEGENDARY_DROPDOWN_ICON_ROLE)
+        if icon is None or not isinstance(icon, QtGui.QIcon):
+            return
+        size = icon.actualSize(QtCore.QSize(9999, 9999))
+        if size.isEmpty():
+            return
+        pixmap = icon.pixmap(size)
+        if pixmap.isNull():
+            return
+        x = option.rect.x() + (option.rect.width() - pixmap.width()) // 2
+        y = option.rect.y() + (option.rect.height() - pixmap.height()) // 2
+        painter.drawPixmap(x, y, pixmap)
+
+    def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
+        hint = index.data(QtCore.Qt.ItemDataRole.SizeHintRole)
+        if isinstance(hint, QtCore.QSize):
+            return hint
+        return super().sizeHint(option, index)
+
+
+class _LegendaryPresetCombo(QtWidgets.QComboBox):
+    """Combo with separate display icon (text-sized) and dropdown icon (configurable)."""
+
+
 class IconTextPopupDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(
         self,
@@ -273,12 +324,18 @@ class IconTextPopupDelegate(QtWidgets.QStyledItemDelegate):
         font = painter.font()
         font.setPointSize(self._text_point_size)
         painter.setFont(font)
-        text_h = painter.fontMetrics().height() if label else 0
+        line_h = painter.fontMetrics().height() if label else 0
+        text_h_total = 2 * line_h if label else 0  # At least 2 lines for text area
         x = option.rect.x() + (option.rect.width() - pixmap.width()) // 2
-        y = option.rect.y() + 2 + max(0, ((option.rect.height() - text_h - 4) - pixmap.height()) // 2)
+        y = option.rect.y() + 2 + max(0, ((option.rect.height() - text_h_total - 4) - pixmap.height()) // 2)
         painter.drawPixmap(x, y, pixmap)
         if label:
-            text_rect = QtCore.QRect(option.rect.x() + 2, option.rect.bottom() - text_h + 1, option.rect.width() - 4, text_h - 2)
+            text_rect = QtCore.QRect(
+                option.rect.x() + 2,
+                option.rect.bottom() - text_h_total + 1,
+                option.rect.width() - 4,
+                text_h_total - 2,
+            )
             painter.drawText(text_rect, QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap, label)
 
     def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
@@ -423,7 +480,11 @@ class RecipeEditorDialog(QtWidgets.QDialog):
 
     def _apply_selector_icons(self) -> None:
         def _configure_popup(combo: QtWidgets.QComboBox, folder: str) -> None:
-            host_window = self.window()
+            # Use parent window for dialogs (RecipeEditorDialog) - self.window() may be small before show
+            parent = self.parent()
+            host_window = (
+                parent.window() if isinstance(parent, QtWidgets.QWidget) else self.window()
+            )
             host_height = host_window.height() if host_window is not None else 900
             max_popup_height = max(300, host_height - 80)
             if self._selector_dropdown_mode == "matrix_large":
@@ -447,7 +508,10 @@ class RecipeEditorDialog(QtWidgets.QDialog):
                 item_count = max(1, combo.count())
                 rows_needed = max(1, (item_count + cols - 1) // cols)
                 rows_shown = min(rows, rows_needed)
-                view.setFixedHeight(min(rows_shown * cell_px + 8, max_popup_height))
+                content_h = rows_shown * cell_px
+                view.setMinimumHeight(0)
+                view.setMaximumHeight(max_popup_height)
+                view.setFixedHeight(min(content_h, max_popup_height))
                 view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
                 view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
                 view.setItemDelegate(IconTextPopupDelegate(self._icon_cache, folder, icon_px, text_pt, cell_px, parent=view))
@@ -495,7 +559,8 @@ class RecipeEditorDialog(QtWidgets.QDialog):
         icon_px = self._icon_px(folder)
         text_pt = self._text_pt(folder)
         text_h = text_height_for_point_size(text_pt)
-        return max(icon_px + text_h + 8, icon_px + 24)
+        # Allocate 2 lines for text in large icon mode
+        return max(icon_px + 2 * text_h + 8, icon_px + 24)
 
     @staticmethod
     def _short_link(url: str, max_chars: int = 72) -> str:
@@ -1533,7 +1598,7 @@ class FilterTab(QtWidgets.QWidget):
         self.ingredient_range_select = self.ingredient_select
         self.tier_effect_select = self.effect_select
         self.tier_value = QtWidgets.QLineEdit("1")
-        self.potion_select = QtWidgets.QComboBox()
+        self.potion_select = _LegendaryPresetCombo()
         self.potion_select.setMaxVisibleItems(12)
         self.potion_select_view = QtWidgets.QListView(self.potion_select)
         self.potion_select_view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -1727,29 +1792,42 @@ class FilterTab(QtWidgets.QWidget):
 
     def _populate_potion_select(self) -> None:
         dropdown_mode = str(getattr(self.app, "selector_dropdown_mode", "matrix_large"))
-        potion_icon_px = max(12, min(96, int(getattr(self.app, "query_potion_icon_px", 24))))
+        # Display icon (closed combo): combined height follows text; dropdown: delegate draws at separate size
+        inline_px = self._inline_icon_px()
+        dropdown_px = max(12, min(96, int(getattr(self.app, "legendary_dropdown_icon_px", 54))))
         current_key = self.potion_select.currentData(QtCore.Qt.ItemDataRole.UserRole)
         self.potion_select.clear()
-        max_icon_width = 0
+        max_display_width = 0
+        max_dropdown_width = 0
         for key, potion in self._potion_defs.items():
             label = ""
             self.potion_select.addItem(label)
             row = self.potion_select.count() - 1
             self.potion_select.setItemData(row, key, QtCore.Qt.ItemDataRole.UserRole)
             self.potion_select.setItemData(row, key, QtCore.Qt.ItemDataRole.ToolTipRole)
-            icon = self._build_potion_group_icon(potion, icon_size=potion_icon_px)
-            if icon is not None:
-                self.potion_select.setItemIcon(row, icon)
-                icon_sizes = icon.availableSizes()
-                if icon_sizes:
-                    max_icon_width = max(max_icon_width, max(size.width() for size in icon_sizes))
+            display_icon = self._build_potion_group_icon(potion, icon_size=inline_px)
+            dropdown_icon = self._build_potion_group_icon(potion, icon_size=dropdown_px)
+            if display_icon is not None:
+                self.potion_select.setItemIcon(row, display_icon)
+                for sz in display_icon.availableSizes():
+                    max_display_width = max(max_display_width, sz.width())
+            elif dropdown_icon is not None:
+                self.potion_select.setItemIcon(row, dropdown_icon)
+            if dropdown_icon is not None:
+                self.potion_select.setItemData(row, dropdown_icon, _LEGENDARY_DROPDOWN_ICON_ROLE)
+                for sz in dropdown_icon.availableSizes():
+                    max_dropdown_width = max(max_dropdown_width, sz.width())
             if dropdown_mode == "matrix_large":
-                row_height = max(32, potion_icon_px + 6)
-                self.potion_select.setItemData(row, QtCore.QSize(max(120, max_icon_width), row_height), QtCore.Qt.ItemDataRole.SizeHintRole)
-        self.potion_select.setIconSize(QtCore.QSize(max(potion_icon_px, max_icon_width), potion_icon_px))
-        self.potion_select_view.setMinimumWidth(max(420 if dropdown_mode == "matrix_large" else 300, max_icon_width + 120))
+                row_height = max(32, dropdown_px + 6)
+                self.potion_select.setItemData(
+                    row, QtCore.QSize(max(120, max_dropdown_width), row_height), QtCore.Qt.ItemDataRole.SizeHintRole
+                )
+        max_display_width = max(max_display_width, (inline_px + 2) * 8)
+        self.potion_select.setIconSize(QtCore.QSize(max_display_width, inline_px))
+        self.potion_select_view.setItemDelegate(_LegendaryDropdownDelegate(dropdown_px, parent=self.potion_select_view))
+        self.potion_select_view.setMinimumWidth(max(420 if dropdown_mode == "matrix_large" else 300, max_dropdown_width + 120))
         text_h = self.potion_select.fontMetrics().height()
-        self.potion_select.setMinimumHeight(max(text_h + 8, potion_icon_px + 10))
+        self.potion_select.setMinimumHeight(max(text_h + 8, inline_px + 10))
         if current_key:
             idx = self.potion_select.findData(current_key, QtCore.Qt.ItemDataRole.UserRole)
             if idx >= 0:
@@ -1798,7 +1876,10 @@ class FilterTab(QtWidgets.QWidget):
                 item_count = max(1, combo.count())
                 rows_needed = max(1, (item_count + cols - 1) // cols)
                 rows_shown = min(rows, rows_needed)
-                view.setFixedHeight(min(rows_shown * cell_px + 8, self._max_popup_height()))
+                content_h = rows_shown * cell_px
+                view.setMinimumHeight(0)
+                view.setMaximumHeight(self._max_popup_height())
+                view.setFixedHeight(min(content_h, self._max_popup_height()))
                 view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
                 view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
                 view.setItemDelegate(IconTextPopupDelegate(self.icon_cache, folder, icon_px, text_pt, cell_px, parent=view))
@@ -1840,7 +1921,8 @@ class FilterTab(QtWidgets.QWidget):
         icon_px = self._icon_px(folder)
         text_pt = self._text_pt(folder)
         text_h = text_height_for_point_size(text_pt)
-        return max(icon_px + text_h + 8, icon_px + 24)
+        # Allocate 2 lines for text in large icon mode
+        return max(icon_px + 2 * text_h + 8, icon_px + 24)
 
     def _query_text_pt(self) -> int:
         return max(8, min(24, int(getattr(self.app, "query_main_text_pt", 12))))

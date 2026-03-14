@@ -60,12 +60,18 @@ class IconTextPopupDelegate(QtWidgets.QStyledItemDelegate):
         font = painter.font()
         font.setPointSize(self._text_point_size)
         painter.setFont(font)
-        text_h = painter.fontMetrics().height() if label else 0
+        line_h = painter.fontMetrics().height() if label else 0
+        text_h_total = 2 * line_h if label else 0  # At least 2 lines for text area
         x = option.rect.x() + (option.rect.width() - pixmap.width()) // 2
-        y = option.rect.y() + 2 + max(0, ((option.rect.height() - text_h - 4) - pixmap.height()) // 2)
+        y = option.rect.y() + 2 + max(0, ((option.rect.height() - text_h_total - 4) - pixmap.height()) // 2)
         painter.drawPixmap(x, y, pixmap)
         if label:
-            text_rect = QtCore.QRect(option.rect.x() + 2, option.rect.bottom() - text_h + 1, option.rect.width() - 4, text_h - 2)
+            text_rect = QtCore.QRect(
+                option.rect.x() + 2,
+                option.rect.bottom() - text_h_total + 1,
+                option.rect.width() - 4,
+                text_h_total - 2,
+            )
             painter.drawText(text_rect, QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.TextFlag.TextWordWrap, label)
 
     def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
@@ -81,10 +87,32 @@ class CustomerTab(QtWidgets.QWidget):
         self.customer_story_vars: dict[str, QtWidgets.QCheckBox] = {}
         self._build_ui()
 
+    def _main_text_pt(self) -> int:
+        return max(8, min(24, int(getattr(self.app, "query_main_text_pt", 12))))
+
+    def _inline_icon_px(self) -> int:
+        """Inline icon size when combo is closed, linked to main text."""
+        return max(12, min(32, int(self._main_text_pt() * 1.5)))
+
+    def _apply_main_text_style(self) -> None:
+        pt = self._main_text_pt()
+        for widget_type in (
+            QtWidgets.QLabel,
+            QtWidgets.QLineEdit,
+            QtWidgets.QComboBox,
+            QtWidgets.QPushButton,
+            QtWidgets.QCheckBox,
+            QtWidgets.QRadioButton,
+            QtWidgets.QGroupBox,
+            QtWidgets.QTextEdit,
+        ):
+            for widget in self.findChildren(widget_type):
+                font = widget.font()
+                font.setPointSize(pt)
+                widget.setFont(font)
+
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        header = QtWidgets.QLabel("Customer Requests Search")
-        layout.addWidget(header)
 
         controls = QtWidgets.QHBoxLayout()
         build_btn = QtWidgets.QPushButton("Build Customer DB")
@@ -146,22 +174,22 @@ class CustomerTab(QtWidgets.QWidget):
         self.apply_options()
 
     def apply_options(self) -> None:
+        self._apply_main_text_style()
         dropdown_mode = str(getattr(self.app, "selector_dropdown_mode", "matrix_large"))
         effect_icon_px = self._icon_px("effects")
         effect_text_pt = self._text_pt("effects")
         effect_cell_px = self._cell_px("effects")
+        inline_px = self._inline_icon_px()
         current_text = self.customer_effect_select.currentText()
         self.customer_effect_select.clear()
         for effect in Effects:
             self.customer_effect_select.addItem(effect.effect_name)
             row = self.customer_effect_select.count() - 1
             self.customer_effect_select.setItemData(row, effect.effect_name, QtCore.Qt.ItemDataRole.UserRole)
-            icon = self.icon_cache.icon("effects", effect.effect_name, min(24, effect_icon_px))
+            icon = self.icon_cache.icon("effects", effect.effect_name, inline_px)
             if icon is not None:
                 self.customer_effect_select.setItemIcon(row, icon)
-        font = self.customer_effect_select.font()
-        font.setPointSize(max(font.pointSize(), 11))
-        self.customer_effect_select.setFont(font)
+        self.customer_effect_select.setIconSize(QtCore.QSize(inline_px, inline_px))
         if dropdown_mode == "matrix_large":
             view = QtWidgets.QListView(self.customer_effect_select)
             view.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
@@ -173,7 +201,10 @@ class CustomerTab(QtWidgets.QWidget):
             item_count = max(1, self.customer_effect_select.count())
             rows_needed = max(1, (item_count + 7 - 1) // 7)
             rows_shown = min(9, rows_needed)
-            view.setFixedHeight(min(rows_shown * effect_cell_px + 8, self._max_popup_height()))
+            content_h = rows_shown * effect_cell_px
+            view.setMinimumHeight(0)
+            view.setMaximumHeight(self._max_popup_height())
+            view.setFixedHeight(min(content_h, self._max_popup_height()))
             view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
             view.setItemDelegate(IconTextPopupDelegate(self.icon_cache, "effects", effect_icon_px, effect_text_pt, effect_cell_px, parent=view))
@@ -204,7 +235,8 @@ class CustomerTab(QtWidgets.QWidget):
         icon_px = self._icon_px(folder)
         text_pt = self._text_pt(folder)
         text_h = text_height_for_point_size(text_pt)
-        return max(icon_px + text_h + 8, icon_px + 24)
+        # Allocate 2 lines for text in large icon mode
+        return max(icon_px + 2 * text_h + 8, icon_px + 24)
 
     def _add_customer_effect(self) -> None:
         name = self.customer_effect_select.currentText().strip()

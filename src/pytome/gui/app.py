@@ -43,9 +43,14 @@ class TomeApp(QtWidgets.QMainWindow):
         self.selector_default_text_sizes = dict(self.selector_text_sizes)
         self.query_main_text_pt = 12
         self.query_inline_icon_px = 16
-        self.query_potion_icon_px = 24
+        self.legendary_dropdown_icon_px = 54
         self.query_icon_view_icon_px = 36
         self.query_icon_page_size = 15
+        self.compatibility_matrix_cell_px = 32
+        self.dull_lowlander_icon_px = 36
+        self.salty_skirt_header_height_px = 58
+        self.salty_skirt_row_height_px = 40
+        self.salty_skirt_divider_height_px = 28
         self._option_listeners: list[object] = []
         self._load_options_from_file()
 
@@ -58,7 +63,7 @@ class TomeApp(QtWidgets.QMainWindow):
         salty_skirt_tab = SaltySkirtTab(self)
         options_tab = OptionsTab(self)
         tabs.addTab(filter_tab, "Query")
-        tabs.addTab(profit_tab, "Profit")
+        tabs.addTab(profit_tab, "Profit Calculator")
         tabs.addTab(compatibility_tab, "Compatibility")
         tabs.addTab(customer_tab, "Customers")
         tabs.addTab(dull_lowlander_tab, "Dull Lowlander")
@@ -66,7 +71,7 @@ class TomeApp(QtWidgets.QMainWindow):
         options_idx = tabs.addTab(options_tab, "Options")
         tabs.setCurrentIndex(options_idx)
         self.setCentralWidget(tabs)
-        self._option_listeners = [filter_tab, profit_tab, customer_tab, dull_lowlander_tab, salty_skirt_tab, options_tab]
+        self._option_listeners = [filter_tab, profit_tab, compatibility_tab, customer_tab, dull_lowlander_tab, salty_skirt_tab, options_tab]
         self._notify_option_listeners()
 
     def _notify_option_listeners(self) -> None:
@@ -138,11 +143,18 @@ class TomeApp(QtWidgets.QMainWindow):
                     return fallback
             return fallback
 
-        self.query_main_text_pt = max(8, min(24, _safe_int(payload.get("query_main_text_pt"), self.query_main_text_pt)))
+        raw_main_pt = payload.get("main_text_pt") or payload.get("query_main_text_pt")
+        self.query_main_text_pt = max(8, min(24, _safe_int(raw_main_pt, self.query_main_text_pt)))
         self.query_inline_icon_px = max(12, min(96, _safe_int(payload.get("query_inline_icon_px"), self.query_inline_icon_px)))
-        self.query_potion_icon_px = max(12, min(96, _safe_int(payload.get("query_potion_icon_px"), self.query_potion_icon_px)))
+        raw_legendary = payload.get("legendary_dropdown_icon_px") or payload.get("query_potion_icon_px")
+        self.legendary_dropdown_icon_px = max(12, min(96, _safe_int(raw_legendary, self.legendary_dropdown_icon_px)))
         self.query_icon_view_icon_px = max(12, min(96, _safe_int(payload.get("query_icon_view_icon_px"), self.query_icon_view_icon_px)))
         self.query_icon_page_size = max(1, min(200, _safe_int(payload.get("query_icon_page_size"), self.query_icon_page_size)))
+        self.compatibility_matrix_cell_px = max(16, min(96, _safe_int(payload.get("compatibility_matrix_cell_px"), self.compatibility_matrix_cell_px)))
+        self.dull_lowlander_icon_px = max(16, min(96, _safe_int(payload.get("dull_lowlander_icon_px"), self.dull_lowlander_icon_px)))
+        self.salty_skirt_header_height_px = max(36, min(96, _safe_int(payload.get("salty_skirt_header_height_px"), self.salty_skirt_header_height_px)))
+        self.salty_skirt_row_height_px = max(24, min(72, _safe_int(payload.get("salty_skirt_row_height_px"), self.salty_skirt_row_height_px)))
+        self.salty_skirt_divider_height_px = max(20, min(56, _safe_int(payload.get("salty_skirt_divider_height_px"), self.salty_skirt_divider_height_px)))
 
     def _save_options_to_file(self) -> None:
         path = self._options_file_path()
@@ -155,9 +167,14 @@ class TomeApp(QtWidgets.QMainWindow):
             "selector_default_text_sizes": self.selector_default_text_sizes,
             "query_main_text_pt": self.query_main_text_pt,
             "query_inline_icon_px": self.query_inline_icon_px,
-            "query_potion_icon_px": self.query_potion_icon_px,
+            "legendary_dropdown_icon_px": self.legendary_dropdown_icon_px,
             "query_icon_view_icon_px": self.query_icon_view_icon_px,
             "query_icon_page_size": self.query_icon_page_size,
+            "compatibility_matrix_cell_px": self.compatibility_matrix_cell_px,
+            "dull_lowlander_icon_px": self.dull_lowlander_icon_px,
+            "salty_skirt_header_height_px": self.salty_skirt_header_height_px,
+            "salty_skirt_row_height_px": self.salty_skirt_row_height_px,
+            "salty_skirt_divider_height_px": self.salty_skirt_divider_height_px,
         }
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -210,8 +227,8 @@ class TomeApp(QtWidgets.QMainWindow):
         self._save_options_to_file()
         self._notify_option_listeners()
 
-    def set_query_potion_icon_px(self, value: int) -> None:
-        self.query_potion_icon_px = max(12, min(96, int(value)))
+    def set_legendary_dropdown_icon_px(self, value: int) -> None:
+        self.legendary_dropdown_icon_px = max(12, min(96, int(value)))
         self._save_options_to_file()
         self._notify_option_listeners()
 
@@ -222,6 +239,31 @@ class TomeApp(QtWidgets.QMainWindow):
 
     def set_query_icon_page_size(self, value: int) -> None:
         self.query_icon_page_size = max(1, min(200, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_compatibility_matrix_cell_px(self, value: int) -> None:
+        self.compatibility_matrix_cell_px = max(16, min(96, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_dull_lowlander_icon_px(self, value: int) -> None:
+        self.dull_lowlander_icon_px = max(16, min(96, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_salty_skirt_header_height_px(self, value: int) -> None:
+        self.salty_skirt_header_height_px = max(36, min(96, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_salty_skirt_row_height_px(self, value: int) -> None:
+        self.salty_skirt_row_height_px = max(24, min(72, int(value)))
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_salty_skirt_divider_height_px(self, value: int) -> None:
+        self.salty_skirt_divider_height_px = max(20, min(56, int(value)))
         self._save_options_to_file()
         self._notify_option_listeners()
 
