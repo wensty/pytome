@@ -2,11 +2,18 @@ import pickle
 import re
 from hashlib import md5
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 import openpyxl
 
-from .common import ASSET_DATA_DIR, effect_md5s
+from .common import (
+    ASSET_DATA_DIR,
+    PlotterPayloadError,
+    decode_plotter_data,
+    effect_md5s,
+    extract_plotter_encoded_segment_from_url,
+    parse_potionous_plotter_decoded_text,
+)
 from .effects import NUMBER_OF_EFFECTS, Effects
 from .utility import SheetImageLoader
 from .recipes import (
@@ -27,6 +34,59 @@ from . import single_effect as SingleEffect
 
 Numerical = Union[int, float]
 Correction = {"Stentch": "Stench", "Rejuvination": "Rejuvenation"}
+_PLOTTER_BASE_BY_LC = {"water": PotionBases.Water, "oil": PotionBases.Oil, "wine": PotionBases.Wine}
+
+# URL-safe base64 + optional padding / percent-encoding (plotter ?data= payload)
+_PLOTTER_PAYLOAD_TEXT = re.compile(r"^[A-Za-z0-9_%+\.\?&=:-]+$")
+
+
+def _plotter_link_from_cell(cell) -> str:
+    """
+    Prefer the worksheet hyperlink target; fall back to visible cell text.
+
+    Salty Skirt column G often shows a plotter URL without a stored hyperlink, so
+    ``cell.hyperlink`` is empty while ``cell.value`` holds the address.
+    """
+    hl = getattr(cell, "hyperlink", None)
+    if hl is not None:
+        target = (hl.target or "").strip()
+        if target:
+            return target
+    raw = getattr(cell, "value", None)
+    if raw is None:
+        return ""
+    s = str(raw).strip()
+    if not s:
+        return ""
+    low = s.lower()
+    if low.startswith(("http://", "https://")):
+        return s
+    if "potionous.app" in low:
+        return s
+    if "plotter" in low and "data=" in low:
+        return s
+    if len(s) >= 40 and _PLOTTER_PAYLOAD_TEXT.fullmatch(s):
+        return s
+    return ""
+
+
+def _decode_potionous_plotter_url(plotter_link: str, *, row_context: str = "") -> tuple[PotionBases, Optional[str]]:
+    """Decode Potionous plotter URL to base + ``datasetId``. Returns ``(Unknown, None)`` on failure."""
+    if not (plotter_link or "").strip():
+        return PotionBases.Unknown, None
+    segment = extract_plotter_encoded_segment_from_url(plotter_link)
+    if not segment:
+        return PotionBases.Unknown, None
+    decoded = decode_plotter_data(segment)
+    if not decoded:
+        return PotionBases.Unknown, None
+    try:
+        base_lc, _dataset_id, _parsed = parse_potionous_plotter_decoded_text(decoded)
+    except PlotterPayloadError as exc:
+        suffix = f" [{row_context}]" if row_context else ""
+        print(f"Salty Skirt plotter payload invalid{suffix}: {exc}")
+        return PotionBases.Unknown, None
+    return _PLOTTER_BASE_BY_LC[base_lc], _dataset_id
 
 
 def to_int(x):
@@ -59,7 +119,7 @@ def read_tome_recipes(tome_path: str | Path | None = None):
             if legendary_match is not None:
                 groups = legendary_match.groups()
                 key = f"{groups[0]}{groups[1]}_{groups[2]}"
-                print(key)
+                # print(key)
                 if key in Correction:
                     key = Correction[key]
                 potion = Legendary.__dict__[key]
@@ -121,7 +181,8 @@ def read_tome_recipes(tome_path: str | Path | None = None):
                 recipe_dump.add(recipe)
                 recipe_dump_count += 1
             if plotter_link:
-                links.append(RecipeLink(recipe, LinkType.Plotter, plotter_link))
+                _, plotter_ds = _decode_potionous_plotter_url(plotter_link)
+                links.append(RecipeLink(recipe, LinkType.Plotter, plotter_link, plotter_tool_dataset_id=plotter_ds))
             if discord_link:
                 links.append(RecipeLink(recipe, LinkType.Discord, discord_link))
             # read comments. This page contains only plotter comments.
@@ -141,6 +202,7 @@ def read_tome_recipes(tome_path: str | Path | None = None):
     col_letters = "ABCDE"
     image_loader = SheetImageLoader(tome_salty_skirt)
     salty_skirt_count = 0
+    salty_skirt_unknown_base = 0
 
     for row in range(10, 204):  # currently not collecting backups.
         if image_loader.image_in(f"A{row}"):  # recipe row.
@@ -167,16 +229,19 @@ def read_tome_recipes(tome_path: str | Path | None = None):
             _salt_grains[Salts.Sun] += to_int(tome_salty_skirt.cell(row, 14).value)
             _salt_grains[Salts.Life] += to_int(tome_salty_skirt.cell(row, 15).value)
             salt_grain_list = SaltGrainList(_salt_grains)
-            plotter_link = tome_salty_skirt.cell(row, 7).hyperlink
-            plotter_link = plotter_link.target or "" if plotter_link else ""
-            recipe = Recipe(PotionBases.Unknown, potion, ingredient_num_list, salt_grain_list, hidden=False)
+            plotter_cell = tome_salty_skirt.cell(row, 7)
+            plotter_link = _plotter_link_from_cell(plotter_cell)
+            base, plotter_ds = _decode_potionous_plotter_url(plotter_link, row_context=f"Salty Skirt row {row}")
+            recipe = Recipe(base, potion, ingredient_num_list, salt_grain_list, hidden=False)
             if recipe not in recipe_dump:
                 recipe_dump.add(recipe)
                 salty_skirt_count += 1
+            if base == PotionBases.Unknown:
+                salty_skirt_unknown_base += 1
             if plotter_link:
-                links.append(RecipeLink(recipe, LinkType.Plotter, plotter_link))
+                links.append(RecipeLink(recipe, LinkType.Plotter, plotter_link, plotter_tool_dataset_id=plotter_ds))
             # read comments.
-            comment_plotter = tome_salty_skirt.cell(row, 7).comment
+            comment_plotter = plotter_cell.comment
             if comment_plotter is not None:
                 comment_text = comment_plotter.text
                 comment_author = comment_plotter.author if comment_plotter.author else "Anonymous"
@@ -223,6 +288,11 @@ def read_tome_recipes(tome_path: str | Path | None = None):
         else:
             continue
     print(f"Completed reading {salty_skirt_count} additional recipes from salty skirt page.")
+    if salty_skirt_unknown_base:
+        print(
+            f"Note: {salty_skirt_unknown_base} Salty Skirt row(s) use Unknown base "
+            "(column G had no usable plotter URL in the hyperlink or cell text, or decoding failed)."
+        )
     print(f"Read {len(comments)} comments in total.")
     print(f"Read {len(links)} links in total.")
     return recipe_dump, comments, links

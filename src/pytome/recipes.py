@@ -219,6 +219,8 @@ class RecipeLink:
     target: Recipe
     type: LinkType
     url: str
+    #: Decoded ``datasetId`` from a Potionous plotter URL (tool/game data revision), not pyTome SQLite.
+    plotter_tool_dataset_id: Optional[str] = None
 
 
 def test():

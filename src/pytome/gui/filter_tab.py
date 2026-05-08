@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from ..common import ASSET_DATA_DIR, element_colors
+from ..common import ASSET_DATA_DIR, element_colors, plotter_tool_dataset_id_from_url
 from ..effects import Effects, PotionBases
 from ..ingredients import Ingredients, Salts
 from ..recipe_database import (
@@ -716,7 +716,9 @@ class RecipeEditorDialog(QtWidgets.QDialog):
     def build_links(self) -> list[RecipeLinkRecord]:
         records: list[RecipeLinkRecord] = []
         for url in self._plotter_links:
-            records.append(RecipeLinkRecord(link_type=LinkType.Plotter, url=url))
+            stripped = url.strip()
+            ds = plotter_tool_dataset_id_from_url(stripped) if stripped else None
+            records.append(RecipeLinkRecord(link_type=LinkType.Plotter, url=url, plotter_tool_dataset_id=ds))
         for url in self._discord_links:
             records.append(RecipeLinkRecord(link_type=LinkType.Discord, url=url))
 
@@ -2285,11 +2287,26 @@ class FilterTab(QtWidgets.QWidget):
 
             with open(path, "w", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow(["base", "hidden", "effects", "ingredients", "salts", "plotter_links", "discord_links"])
+                writer.writerow(
+                    [
+                        "base",
+                        "hidden",
+                        "effects",
+                        "ingredients",
+                        "salts",
+                        "plotter_links",
+                        "plotter_tool_dataset_ids",
+                        "discord_links",
+                    ]
+                )
                 for recipe in self.app.last_results:
                     recipe_hash = get_recipe_hash(recipe)
                     links = links_by_hash.get(recipe_hash, [])
-                    plotter_links = [link.url for link in links if link.link_type == LinkType.Plotter and link.url]
+                    plotter_link_rows = [link for link in links if link.link_type == LinkType.Plotter and link.url]
+                    plotter_links = [link.url for link in plotter_link_rows]
+                    plotter_dataset_ids = [
+                        (link.plotter_tool_dataset_id or "") for link in plotter_link_rows
+                    ]
                     discord_links = [link.url for link in links if link.link_type == LinkType.Discord and link.url]
                     effects = _format_nonzero([(Effects(i).name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0])
                     ingredients = _format_nonzero(
@@ -2304,6 +2321,7 @@ class FilterTab(QtWidgets.QWidget):
                             ingredients,
                             salts,
                             "; ".join(plotter_links),
+                            "; ".join(plotter_dataset_ids),
                             "; ".join(discord_links),
                         ]
                     )

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from ..common import plotter_tool_dataset_id_from_url
 from ..effects import Effects, PotionBases, base_effects
 from ..ingredients import Ingredients
 from ..recipe_database import (
@@ -754,7 +755,11 @@ class DullLowlanderTab(QtWidgets.QWidget):
                     comments_to_save = _dedupe_comment_records(list(existing_recipe_comments) + comments_to_save)
                 replace_recipe_comments_by_hash(recipe_hash, comments_to_save, db_path=db_path)
 
-                records: list[RecipeLinkRecord] = [RecipeLinkRecord(link_type=LinkType.Plotter, url=url) for url in plotter_links_ref]
+                records: list[RecipeLinkRecord] = []
+                for url in plotter_links_ref:
+                    stripped = url.strip()
+                    ds = plotter_tool_dataset_id_from_url(stripped) if stripped else None
+                    records.append(RecipeLinkRecord(link_type=LinkType.Plotter, url=url, plotter_tool_dataset_id=ds))
                 records.extend(RecipeLinkRecord(link_type=LinkType.Discord, url=url) for url in discord_links_ref)
                 replace_recipe_links_by_hash(recipe_hash, records, db_path=db_path)
 

@@ -285,12 +285,14 @@ def run_filters(
             ]
             links = links_by_hash.get(recipe_hash, [])
             _print_recipe(recipe, index, comments=comments)
-            plotter_links = [link.url for link in links if link.link_type == LinkType.Plotter and link.url]
+            plotter_rows = [link for link in links if link.link_type == LinkType.Plotter and link.url]
             discord_links = [link.url for link in links if link.link_type == LinkType.Discord and link.url]
-            if plotter_links:
-                print(f"  plotter_links({len(plotter_links)}):")
-                for link in plotter_links:
-                    print(f"    - {link}")
+            if plotter_rows:
+                print(f"  plotter_links({len(plotter_rows)}):")
+                for link in plotter_rows:
+                    tid = link.plotter_tool_dataset_id
+                    suffix = f" [plotter datasetId: {tid}]" if tid else ""
+                    print(f"    - {link.url}{suffix}")
             else:
                 print("  plotter_links: None")
             if discord_links:

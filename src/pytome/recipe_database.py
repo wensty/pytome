@@ -35,6 +35,7 @@ class RecipeCommentRecord:
 class RecipeLinkRecord:
     link_type: LinkType
     url: str
+    plotter_tool_dataset_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,7 +80,7 @@ def _normalize_link_records(records: Iterable[RecipeLinkRecord]) -> list[RecipeL
         if key in seen:
             continue
         seen.add(key)
-        deduped.append(RecipeLinkRecord(link_type=record.link_type, url=url))
+        deduped.append(RecipeLinkRecord(link_type=record.link_type, url=url, plotter_tool_dataset_id=record.plotter_tool_dataset_id))
     return deduped
 
 
@@ -316,6 +317,9 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_recipe_comments_recipe ON recipe_comments(recipe_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dull_lowlander_comments_lookup ON dull_lowlander_comments(base, effect_id, ingredient_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_dull_lowlander_statuses_lookup ON dull_lowlander_statuses(base, effect_id, ingredient_id)")
+    _recipe_links_cols = [row[1] for row in conn.execute("PRAGMA table_info(recipe_links)").fetchall()]
+    if _recipe_links_cols and "plotter_tool_dataset_id" not in _recipe_links_cols:
+        conn.execute("ALTER TABLE recipe_links ADD COLUMN plotter_tool_dataset_id TEXT")
 
 
 def initialize_database(db_path: pathlib.Path = DEFAULT_DB_PATH) -> None:
@@ -385,7 +389,17 @@ def save_recipes(
             )
             saved_count += 1
         if links is not None:
-            link_records_with_hash = [(_recipe_hash(link.target), RecipeLinkRecord(link_type=link.type, url=link.url)) for link in links]
+            link_records_with_hash = [
+                (
+                    _recipe_hash(link.target),
+                    RecipeLinkRecord(
+                        link_type=link.type,
+                        url=link.url,
+                        plotter_tool_dataset_id=link.plotter_tool_dataset_id,
+                    ),
+                )
+                for link in links
+            ]
             link_records_with_hash = [(recipe_hash, record) for recipe_hash, record in link_records_with_hash if record.url]
             seen_links: set[tuple[str, int, str]] = set()
             for link_recipe_hash, record in link_records_with_hash:
@@ -398,13 +412,14 @@ def save_recipes(
                     continue
                 conn.execute(
                     """
-                    INSERT OR IGNORE INTO recipe_links (recipe_id, link_type, url)
-                    VALUES (?, ?, ?)
+                    INSERT OR IGNORE INTO recipe_links (recipe_id, link_type, url, plotter_tool_dataset_id)
+                    VALUES (?, ?, ?, ?)
                     """,
                     (
                         link_recipe_id,
                         int(record.link_type),
                         record.url,
+                        record.plotter_tool_dataset_id,
                     ),
                 )
         if comments is not None:
@@ -504,8 +519,8 @@ def add_recipe(recipe: Recipe, db_path: pathlib.Path = DEFAULT_DB_PATH) -> int:
 def _merge_recipe_metadata(conn: sqlite3.Connection, from_recipe_id: int, to_recipe_id: int) -> None:
     conn.execute(
         """
-        INSERT OR IGNORE INTO recipe_links (recipe_id, link_type, url)
-        SELECT ?, link_type, url
+        INSERT OR IGNORE INTO recipe_links (recipe_id, link_type, url, plotter_tool_dataset_id)
+        SELECT ?, link_type, url, plotter_tool_dataset_id
         FROM recipe_links
         WHERE recipe_id = ?
         """,
@@ -639,7 +654,7 @@ def load_recipe_links(db_path: pathlib.Path = DEFAULT_DB_PATH) -> dict[str, list
         _ensure_schema(conn)
         rows = conn.execute(
             """
-            SELECT r.recipe_hash, rl.link_type, rl.url
+            SELECT r.recipe_hash, rl.link_type, rl.url, rl.plotter_tool_dataset_id
             FROM recipe_links rl
             JOIN recipes r ON r.id = rl.recipe_id
             ORDER BY rl.id
@@ -650,7 +665,11 @@ def load_recipe_links(db_path: pathlib.Path = DEFAULT_DB_PATH) -> dict[str, list
             link_type_id = int(row["link_type"])
             link_type = LinkType(link_type_id) if link_type_id in LinkType._value2member_map_ else LinkType.Plotter
             url = str(row["url"] or "")
-            links_by_hash.setdefault(recipe_hash, []).append(RecipeLinkRecord(link_type=link_type, url=url))
+            plotter_tid = row["plotter_tool_dataset_id"]
+            plotter_tid_s = None if plotter_tid is None or plotter_tid == "" else str(plotter_tid)
+            links_by_hash.setdefault(recipe_hash, []).append(
+                RecipeLinkRecord(link_type=link_type, url=url, plotter_tool_dataset_id=plotter_tid_s)
+            )
     return links_by_hash
 
 
@@ -670,13 +689,14 @@ def replace_recipe_links_by_hash(
         for link in normalized:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO recipe_links (recipe_id, link_type, url)
-                VALUES (?, ?, ?)
+                INSERT OR IGNORE INTO recipe_links (recipe_id, link_type, url, plotter_tool_dataset_id)
+                VALUES (?, ?, ?, ?)
                 """,
                 (
                     recipe_id,
                     int(link.link_type),
                     link.url,
+                    link.plotter_tool_dataset_id,
                 ),
             )
 
