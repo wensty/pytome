@@ -36,12 +36,16 @@ class SaltOptimizationResult:
     target_salt: Salts
     ingredient_cost: int
     ingredient_cost_per_unit: float
+    #: Ingredient-slot demand per ``target_units`` of ``target_salt`` (same MILP units as order vectors).
+    ingredient_units_per_target_unit: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
 class SaltySkirtReport:
     order_vectors: dict[Salts, SaltOrderVector]
     per_salt_optima: dict[Salts, SaltOptimizationResult]
+    #: Non-negative shadow prices from ``produced_units * p_s >= ingredient + Σ consumed * p`` LP (tool-internal units).
+    equilibrium_salt_prices: dict[Salts, float]
     iteration_count: int = 0
     from_cache: bool = False
 
@@ -288,7 +292,7 @@ def _load_cached_report(
             payload = pickle.load(f)
         if not isinstance(payload, dict):
             return None
-        if payload.get("schema") != 2:
+        if payload.get("schema") != 3:
             return None
         if payload.get("db_mtime_ns") != db_path.stat().st_mtime_ns:
             return None
@@ -314,7 +318,7 @@ def _save_cached_report(
 ) -> None:
     path = _cache_path(db_path)
     payload = {
-        "schema": 2,
+        "schema": 3,
         "db_mtime_ns": db_path.stat().st_mtime_ns,
         "db_size": db_path.stat().st_size,
         "requirement_sig": requirement_sig,
@@ -417,19 +421,24 @@ def solve_for_target_salt(
     if str(model.getStatus()).lower() != "optimal":
         raise RuntimeError(f"SCIP did not find an optimal LP mixing solution for {target_salt.salt_name}.")
 
-    order_counts: list[float] = [0.0] * NUMBER_OF_SALTS
     ingredient_cost = 0.0
+    ing_acc = [0.0] * NUMBER_OF_INGREDIENTS
     for salt in Salts:
         value = float(model.getVal(t_vars[salt]))
         count = max(0.0, value)
-        normalized = float(round(count)) if abs(count - round(count)) <= 1e-9 else count
-        order_counts[int(salt)] = normalized
         ingredient_cost += float(order_vectors[salt].ingredient_cost) * float(count)
+        vec = order_vectors[salt].ingredient_consumption
+        for i in range(NUMBER_OF_INGREDIENTS):
+            ing_acc[i] += float(count) * float(vec[i])
+
+    tu = float(target_units)
+    ing_per_unit = tuple(float(x) / tu for x in ing_acc)
 
     return SaltOptimizationResult(
         target_salt=target_salt,
         ingredient_cost=int(round(ingredient_cost)),
-        ingredient_cost_per_unit=float(ingredient_cost) / float(target_units),
+        ingredient_cost_per_unit=float(ingredient_cost) / tu,
+        ingredient_units_per_target_unit=ing_per_unit,
     )
 
 
@@ -448,7 +457,7 @@ def build_salty_skirt_report(
     candidate_pool = _build_candidate_pool(recipes, requirement_pool)
     initial_vectors = build_salt_order_vectors(db_path=db_path)
     initial_prices = _initial_salt_prices(initial_vectors)
-    vectors, _prices, iteration_count = _iterative_joint_vectors(
+    vectors, eq_prices, iteration_count = _iterative_joint_vectors(
         candidate_pool,
         requirement_pool,
         initial_prices=initial_prices,
@@ -458,8 +467,18 @@ def build_salty_skirt_report(
     report = SaltySkirtReport(
         order_vectors=vectors,
         per_salt_optima=per_salt_optima,
+        equilibrium_salt_prices=dict(eq_prices),
         iteration_count=iteration_count,
         from_cache=False,
     )
     _save_cached_report(db_path=db_path, requirement_sig=requirement_sig, max_iterations=max_iterations, report=report)
     return report
+
+
+def ingredient_material_scalar_per_grain_from_report(report: SaltySkirtReport) -> list[float]:
+    """Sum of MILP ingredient-slot demand per grain of each salt (for comparing recipes to preset scalars)."""
+    scalars: list[float] = []
+    for salt in Salts:
+        tup = report.per_salt_optima[salt].ingredient_units_per_target_unit
+        scalars.append(float(sum(tup)) if tup else 0.0)
+    return scalars

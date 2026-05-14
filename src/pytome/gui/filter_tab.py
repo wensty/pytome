@@ -8,6 +8,12 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from ..common import ASSET_DATA_DIR, element_colors, plotter_tool_dataset_id_from_url
 from ..effects import Effects, PotionBases
 from ..ingredients import Ingredients, Salts
+from ..recipe_metrics import (
+    format_equiv_cost,
+    format_equiv_materials,
+    recipe_material_unit_total,
+    recipe_preset_gold_total,
+)
 from ..recipe_database import (
     add_recipe,
     build_database_from_tome,
@@ -482,9 +488,7 @@ class RecipeEditorDialog(QtWidgets.QDialog):
         def _configure_popup(combo: QtWidgets.QComboBox, folder: str) -> None:
             # Use parent window for dialogs (RecipeEditorDialog) - self.window() may be small before show
             parent = self.parent()
-            host_window = (
-                parent.window() if isinstance(parent, QtWidgets.QWidget) else self.window()
-            )
+            host_window = parent.window() if isinstance(parent, QtWidgets.QWidget) else self.window()
             host_height = host_window.height() if host_window is not None else 900
             max_popup_height = max(300, host_height - 80)
             if self._selector_dropdown_mode == "matrix_large":
@@ -769,8 +773,10 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.separator_width = 2
         self.id_col_width = 50
         self.base_col_width = self.icon_size + 12
-        self.effects_col_width = self.effect_icon_size * 5 + 60
+        self.effects_col_width = self.effect_icon_size * 5 + 10
         self.comment_col_width = 160
+        self.equiv_cost_col_width = 104
+        self.equiv_mat_col_width = 72
         self.ingredient_cell_px = self.header_icon_size + 6
         self.ingredients_col_width = self.ingredient_cell_px * len(Ingredients)
         self.salt_cell_px = max(self.header_icon_size + 6, 76)
@@ -780,6 +786,9 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.row_height = max(self.effect_icon_size, self.salt_icon_size, self.icon_size) + 12
         self.value_font = QtGui.QFont(self.font())
         self.value_font.setPointSize(max(self.value_font.pointSize() + 2, 11))
+        self.equiv_font = QtGui.QFont(self.font())
+        self.equiv_font.setPointSize(max(self.equiv_font.pointSize() + 1, 11))
+        self.equiv_font.setStyleHint(QtGui.QFont.StyleHint.Monospace)
         self._ingredient_column_colors = self._build_ingredient_column_colors()
         self._ingredient_boundary_cols: set[int] = set()
 
@@ -878,8 +887,8 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.v_scroll.valueChanged.connect(lambda value: right_scroll.setValue(value) if right_scroll is not None else None)
 
     def _configure_tables(self) -> None:
-        self.left_header_table.setColumnCount(4)
-        self.left_table.setColumnCount(4)
+        self.left_header_table.setColumnCount(6)
+        self.left_table.setColumnCount(6)
         self.right_header_table.setColumnCount(len(Ingredients) + len(Salts) + 1)
         self.right_table.setColumnCount(len(Ingredients) + len(Salts) + 1)
 
@@ -896,12 +905,20 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.left_table.setColumnWidth(1, self.base_col_width)
         self.left_table.setColumnWidth(2, self.effects_col_width)
         self.left_table.setColumnWidth(3, self.comment_col_width)
-        self.left_table.setFixedWidth(self.id_col_width + self.base_col_width + self.effects_col_width + self.comment_col_width + 5)
+        self.left_table.setColumnWidth(4, self.equiv_cost_col_width)
+        self.left_table.setColumnWidth(5, self.equiv_mat_col_width)
+        self.left_table.setFixedWidth(
+            self.id_col_width + self.base_col_width + self.effects_col_width + self.comment_col_width + self.equiv_cost_col_width + self.equiv_mat_col_width + 5
+        )
         self.left_header_table.setColumnWidth(0, self.id_col_width)
         self.left_header_table.setColumnWidth(1, self.base_col_width)
         self.left_header_table.setColumnWidth(2, self.effects_col_width)
         self.left_header_table.setColumnWidth(3, self.comment_col_width)
-        self.left_header_table.setFixedWidth(self.id_col_width + self.base_col_width + self.effects_col_width + self.comment_col_width + 5)
+        self.left_header_table.setColumnWidth(4, self.equiv_cost_col_width)
+        self.left_header_table.setColumnWidth(5, self.equiv_mat_col_width)
+        self.left_header_table.setFixedWidth(
+            self.id_col_width + self.base_col_width + self.effects_col_width + self.comment_col_width + self.equiv_cost_col_width + self.equiv_mat_col_width + 5
+        )
 
         for idx in range(len(Ingredients)):
             self.right_table.setColumnWidth(idx, self.ingredient_cell_px)
@@ -990,6 +1007,8 @@ class RecipeIconWindow(QtWidgets.QDialog):
         self.left_header_table.setCellWidget(0, 1, _header_label("Base"))
         self.left_header_table.setCellWidget(0, 2, _header_label("Effects"))
         self.left_header_table.setCellWidget(0, 3, _header_label("Comments"))
+        self.left_header_table.setCellWidget(0, 4, _header_label("Cost"))
+        self.left_header_table.setCellWidget(0, 5, _header_label("Ing."))
 
         col = 0
         for ingredient in Ingredients:
@@ -1438,6 +1457,21 @@ class RecipeIconWindow(QtWidgets.QDialog):
             self.left_table.setCellWidget(row, 2, self._build_effects_widget(recipe))
             self.left_table.setCellWidget(row, 3, self._build_comment_widget(recipe))
 
+            psc = str(getattr(self.app, "recipe_production_scale", "single"))
+            sms = str(getattr(self.app, "salt_material_source", "preset"))
+            gold = recipe_preset_gold_total(recipe, production_scale=psc)
+            mats = recipe_material_unit_total(recipe, salt_material_source=sms, production_scale=psc)
+            cost_item = QtWidgets.QTableWidgetItem(format_equiv_cost(gold))
+            cost_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            cost_item.setFont(self.equiv_font)
+            cost_item.setToolTip("Per-potion gold after Options production scale.")
+            mat_item = QtWidgets.QTableWidgetItem(format_equiv_materials(mats))
+            mat_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            mat_item.setFont(self.equiv_font)
+            mat_item.setToolTip("Per-potion material score after Options production scale.")
+            self.left_table.setItem(row, 4, cost_item)
+            self.left_table.setItem(row, 5, mat_item)
+
             col = 0
             for value in recipe.ingredient_num_list:
                 text = "" if value == 0 else str(int(value))
@@ -1706,6 +1740,17 @@ class FilterTab(QtWidgets.QWidget):
         export_btn = QtWidgets.QPushButton("Export")
         actions.addWidget(filter_btn)
         actions.addWidget(export_btn)
+        actions.addWidget(QtWidgets.QLabel("Sort"))
+        self.result_sort_combo = QtWidgets.QComboBox()
+        self.result_sort_combo.addItem("None", "none")
+        self.result_sort_combo.addItem("Price (gold: ingredients + salts, preset)", "price")
+        self.result_sort_combo.addItem("Materials (1 per herb + salt→herb ratio)", "materials")
+        self.result_sort_combo.setToolTip(
+            "Uses Options → Query → cost / batch basis (single vs batch scaling).\n"
+            "Price: shop gold + AssumedGoldPerGrain for salts.\n"
+            "Materials: herb counts + salt grains × equiv / grain from Options salt accounting."
+        )
+        actions.addWidget(self.result_sort_combo)
         actions.addStretch(1)
         layout.addLayout(actions)
 
@@ -1725,6 +1770,7 @@ class FilterTab(QtWidgets.QWidget):
         set_potion_btn.clicked.connect(self._set_tiers_from_potion)
         filter_btn.clicked.connect(self._run_filter)
         export_btn.clicked.connect(self._export_results)
+        self.result_sort_combo.currentIndexChanged.connect(self._on_result_sort_changed)
 
         self.effect_select.currentTextChanged.connect(
             lambda _value: self._sync_range_selection(
@@ -1821,9 +1867,7 @@ class FilterTab(QtWidgets.QWidget):
                     max_dropdown_width = max(max_dropdown_width, sz.width())
             if dropdown_mode == "matrix_large":
                 row_height = max(32, dropdown_px + 6)
-                self.potion_select.setItemData(
-                    row, QtCore.QSize(max(120, max_dropdown_width), row_height), QtCore.Qt.ItemDataRole.SizeHintRole
-                )
+                self.potion_select.setItemData(row, QtCore.QSize(max(120, max_dropdown_width), row_height), QtCore.Qt.ItemDataRole.SizeHintRole)
         max_display_width = max(max_display_width, (inline_px + 2) * 8)
         self.potion_select.setIconSize(QtCore.QSize(max_display_width, inline_px))
         self.potion_select_view.setItemDelegate(_LegendaryDropdownDelegate(dropdown_px, parent=self.potion_select_view))
@@ -1902,6 +1946,12 @@ class FilterTab(QtWidgets.QWidget):
         self._configure_edit_min_chars(self.base, 8)
         self._configure_edit_min_chars(self.not_base, 8)
         self._configure_edit_min_chars(self.lowlander, 4)
+        qrs = str(getattr(self.app, "query_result_sort", "none"))
+        self.result_sort_combo.blockSignals(True)
+        ridx = self.result_sort_combo.findData(qrs)
+        if ridx >= 0:
+            self.result_sort_combo.setCurrentIndex(ridx)
+        self.result_sort_combo.blockSignals(False)
         self._populate_potion_select()
 
     def _max_popup_height(self) -> int:
@@ -2261,12 +2311,23 @@ class FilterTab(QtWidgets.QWidget):
                 extra_effects=extra_effects,
                 extra_effects_min=extra_effects_min_value,
             )
+            sort_mode = str(getattr(self.app, "query_result_sort", "none"))
+            psc = str(getattr(self.app, "recipe_production_scale", "single"))
+            if sort_mode == "price":
+                recipes.sort(key=lambda r: recipe_preset_gold_total(r, production_scale=psc))
+            elif sort_mode == "materials":
+                sms = str(getattr(self.app, "salt_material_source", "preset"))
+                recipes.sort(key=lambda r: recipe_material_unit_total(r, salt_material_source=sms, production_scale=psc))
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "Invalid input", str(exc))
             return
 
         self.app.last_results = recipes
         self._open_icon_view(recipes)
+
+    def _on_result_sort_changed(self, index: int) -> None:
+        mode = str(self.result_sort_combo.itemData(index) or "none")
+        self.app.set_query_result_sort(mode)
 
     def _export_results(self) -> None:
         if not self.app.last_results:
@@ -2304,9 +2365,7 @@ class FilterTab(QtWidgets.QWidget):
                     links = links_by_hash.get(recipe_hash, [])
                     plotter_link_rows = [link for link in links if link.link_type == LinkType.Plotter and link.url]
                     plotter_links = [link.url for link in plotter_link_rows]
-                    plotter_dataset_ids = [
-                        (link.plotter_tool_dataset_id or "") for link in plotter_link_rows
-                    ]
+                    plotter_dataset_ids = [(link.plotter_tool_dataset_id or "") for link in plotter_link_rows]
                     discord_links = [link.url for link in links if link.link_type == LinkType.Discord and link.url]
                     effects = _format_nonzero([(Effects(i).name, tier) for i, tier in enumerate(recipe.effect_tier_list) if tier > 0])
                     ingredients = _format_nonzero(

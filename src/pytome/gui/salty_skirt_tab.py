@@ -11,12 +11,36 @@ from .font_utils import text_height_for_point_size
 from .icons import IconCache
 
 
+class SkirtSolveThread(QtCore.QThread):
+    succeeded = QtCore.pyqtSignal(object)
+    failed = QtCore.pyqtSignal(str)
+
+    def __init__(self, db_path: Path, max_iter: int | None, force_refresh: bool) -> None:
+        super().__init__()
+        self._db_path = db_path
+        self._max_iter = max_iter
+        self._force_refresh = force_refresh
+
+    def run(self) -> None:
+        try:
+            report = build_salty_skirt_report(
+                self._db_path,
+                max_iterations=self._max_iter,
+                force_refresh=self._force_refresh,
+            )
+            self.succeeded.emit(report)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class SaltySkirtTab(QtWidgets.QWidget):
     def __init__(self, app) -> None:
         super().__init__()
         self.app = app
         self.icon_cache = IconCache()
         self._report: SaltySkirtReport | None = None
+        self._solve_thread: SkirtSolveThread | None = None
+        self._pending_run_mode = "cache"
         self._build_ui()
 
     def _main_text_pt(self) -> int:
@@ -184,6 +208,9 @@ class SaltySkirtTab(QtWidgets.QWidget):
             self._refresh_selected_details()
 
     def _calculate(self, force_refresh: bool, run_mode: str) -> None:
+        if self._solve_thread is not None and self._solve_thread.isRunning():
+            QtWidgets.QMessageBox.information(self, "Salty Skirt", "A solve is already running in the background.")
+            return
         max_iter: int | None = None
         raw = self.max_iter_edit.text().strip()
         if raw:
@@ -196,18 +223,41 @@ class SaltySkirtTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(self, "Salty Skirt", "Max iterations must be > 0.")
                 return
             max_iter = parsed
-        try:
-            self._report = build_salty_skirt_report(
-                Path(self.app.db_path),
-                max_iterations=max_iter,
-                force_refresh=force_refresh,
-            )
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Salty Skirt", str(exc))
-            return
 
-        self._refresh_tables(run_mode=run_mode)
+        self._pending_run_mode = run_mode
+        self.status_label.setText("Solving in background… (UI stays responsive)")
+        self.cache_btn.setEnabled(False)
+        self.force_btn.setEnabled(False)
+
+        self._solve_thread = SkirtSolveThread(Path(self.app.db_path), max_iter, force_refresh)
+        self._solve_thread.succeeded.connect(self._on_skirt_solve_finished)
+        self._solve_thread.failed.connect(self._on_skirt_solve_failed)
+        self._solve_thread.finished.connect(self._on_skirt_thread_finished)
+        self._solve_thread.start()
+
+    def _on_skirt_solve_finished(self, report: object) -> None:
+        if not isinstance(report, SaltySkirtReport):
+            return
+        self._report = report
+        self.app.apply_salty_skirt_report(report)
+        self._refresh_tables(run_mode=getattr(self, "_pending_run_mode", "cache"))
         self._refresh_selected_details()
+        cache_path = Path(self.app.db_path).parent / "salty_skirt_cache.pkl.gz"
+        if cache_path.exists():
+            self.cache_btn.setStyleSheet("background-color: #c6f6c6;")
+        else:
+            self.cache_btn.setStyleSheet("background-color: #ffd6d6;")
+        self.status_label.setText(
+            f"Background solve finished ({report.iteration_count} iterations). Tables updated."
+        )
+
+    def _on_skirt_solve_failed(self, message: str) -> None:
+        QtWidgets.QMessageBox.warning(self, "Salty Skirt", message)
+
+    def _on_skirt_thread_finished(self) -> None:
+        self.cache_btn.setEnabled(True)
+        self.force_btn.setEnabled(True)
+        self._solve_thread = None
 
     def _refresh_tables(self, run_mode: str) -> None:
         report = self._report
@@ -217,7 +267,7 @@ class SaltySkirtTab(QtWidgets.QWidget):
         relevant_ingredients, relevant_salts = self._collect_relevant_axes(report)
         self._build_summary_columns(relevant_ingredients, relevant_salts)
 
-        salt_price = {salt: float(report.per_salt_optima[salt].ingredient_cost_per_unit) for salt in Salts}
+        salt_price = {salt: float(report.equilibrium_salt_prices[salt]) for salt in Salts}
         r_px = self._row_height()
         self.summary_table.setRowCount(len(Salts))
         for row in range(len(Salts)):
@@ -312,7 +362,7 @@ class SaltySkirtTab(QtWidgets.QWidget):
         vector = report.order_vectors[selected]
         relevant_ingredients, relevant_salts = self._collect_relevant_axes(report)
         self._build_detail_columns(relevant_ingredients, relevant_salts)
-        salt_price = {salt: report.per_salt_optima[salt].ingredient_cost_per_unit for salt in Salts}
+        salt_price = {salt: float(report.equilibrium_salt_prices[salt]) for salt in Salts}
 
         rows: list[tuple[str, OrderRecipeChoice | str]] = []
         last_group = ""

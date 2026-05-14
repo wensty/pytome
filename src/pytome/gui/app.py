@@ -51,6 +51,13 @@ class TomeApp(QtWidgets.QMainWindow):
         self.salty_skirt_header_height_px = 58
         self.salty_skirt_row_height_px = 40
         self.salty_skirt_divider_height_px = 28
+        # "preset" | "salty_skirt" — how salt grains translate to material score (Options + material sort).
+        self.salt_material_source = "preset"
+        # "none" | "price" | "materials"
+        self.query_result_sort = "none"
+        self.salty_skirt_report = None
+        # Cost / material metrics for Query sort + icon view columns: "single" | "batch"
+        self.recipe_production_scale = "single"
         self._option_listeners: list[object] = []
         self._load_options_from_file()
 
@@ -155,6 +162,16 @@ class TomeApp(QtWidgets.QMainWindow):
         self.salty_skirt_header_height_px = max(36, min(96, _safe_int(payload.get("salty_skirt_header_height_px"), self.salty_skirt_header_height_px)))
         self.salty_skirt_row_height_px = max(24, min(72, _safe_int(payload.get("salty_skirt_row_height_px"), self.salty_skirt_row_height_px)))
         self.salty_skirt_divider_height_px = max(20, min(56, _safe_int(payload.get("salty_skirt_divider_height_px"), self.salty_skirt_divider_height_px)))
+        sms = str(payload.get("salt_material_source", "") or "").strip().lower()
+        if sms in {"preset", "salty_skirt"}:
+            self.salt_material_source = sms
+        qrs = str(payload.get("query_result_sort", "") or "").strip().lower()
+        if qrs in {"none", "price", "materials"}:
+            self.query_result_sort = qrs
+        rps = str(payload.get("recipe_production_scale", "") or "").strip().lower()
+        if rps in {"single", "batch"}:
+            self.recipe_production_scale = rps
+        self._sync_salty_skirt_material_scalars()
 
     def _save_options_to_file(self) -> None:
         path = self._options_file_path()
@@ -175,6 +192,9 @@ class TomeApp(QtWidgets.QMainWindow):
             "salty_skirt_header_height_px": self.salty_skirt_header_height_px,
             "salty_skirt_row_height_px": self.salty_skirt_row_height_px,
             "salty_skirt_divider_height_px": self.salty_skirt_divider_height_px,
+            "salt_material_source": self.salt_material_source,
+            "query_result_sort": self.query_result_sort,
+            "recipe_production_scale": self.recipe_production_scale,
         }
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -267,11 +287,47 @@ class TomeApp(QtWidgets.QMainWindow):
         self._save_options_to_file()
         self._notify_option_listeners()
 
+    def set_salt_material_source(self, value: str) -> None:
+        if value not in {"preset", "salty_skirt"}:
+            return
+        self.salt_material_source = value
+        self._sync_salty_skirt_material_scalars()
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def set_query_result_sort(self, value: str) -> None:
+        if value not in {"none", "price", "materials"}:
+            return
+        self.query_result_sort = value
+        self._save_options_to_file()
+
+    def set_recipe_production_scale(self, value: str) -> None:
+        if value not in {"single", "batch"}:
+            return
+        self.recipe_production_scale = value
+        self._save_options_to_file()
+        self._notify_option_listeners()
+
+    def _sync_salty_skirt_material_scalars(self) -> None:
+        from ..ingredients import set_salty_skirt_material_scalar_per_grain
+        from ..salty_skirt_optimizer import ingredient_material_scalar_per_grain_from_report
+
+        if self.salt_material_source == "salty_skirt" and self.salty_skirt_report is not None:
+            set_salty_skirt_material_scalar_per_grain(ingredient_material_scalar_per_grain_from_report(self.salty_skirt_report))
+        else:
+            set_salty_skirt_material_scalar_per_grain(None)
+
+    def apply_salty_skirt_report(self, report: object) -> None:
+        """Store last Salty Skirt solve and refresh salt material scalars when that option is active."""
+        self.salty_skirt_report = report
+        self._sync_salty_skirt_material_scalars()
+
     def set_db_path(self, value: str) -> None:
         value = value.strip()
         if not value:
             return
         self.db_path = value
+        self.salty_skirt_report = None
         self._load_options_from_file()
         self._notify_option_listeners()
 

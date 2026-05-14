@@ -222,6 +222,27 @@ class Ingredients(IntEnum):
         return IngredientElement(self // 7)
 
 
+AssumedGoldPerGrain = [0.08, 0.22, 0.18, 1.22, 2.83]
+AssumedIngredientPerGrain = [0.00122, 0.00268, 0.00209, 0.01473, 0.03039]
+
+# One scalar per salt: sum of MILP ingredient-slot demand per grain from the last Salty Skirt solve.
+_salty_skirt_material_scalar_per_grain: list[float] | None = None
+
+
+def set_salty_skirt_material_scalar_per_grain(values: list[float] | None) -> None:
+    global _salty_skirt_material_scalar_per_grain
+    if values is None:
+        _salty_skirt_material_scalar_per_grain = None
+        return
+    if len(values) != NUMBER_OF_SALTS:
+        raise ValueError(f"Expected {NUMBER_OF_SALTS} salt scalars, got {len(values)}")
+    _salty_skirt_material_scalar_per_grain = [float(v) for v in values]
+
+
+def salty_skirt_material_scalar_per_grain_list() -> list[float] | None:
+    return None if _salty_skirt_material_scalar_per_grain is None else list(_salty_skirt_material_scalar_per_grain)
+
+
 class Salts(IntEnum):
 
     Void = 0
@@ -235,6 +256,28 @@ class Salts(IntEnum):
     @property
     def salt_name(self) -> str:
         return _salt_names[self]
+
+    @property
+    def gold_per_grain(self) -> float:
+        """
+        gold cost per grain.
+        """
+        return AssumedGoldPerGrain[self]
+
+    def ingredient_per_grain(self, *, salt_material_source: str = "preset") -> float:
+        """
+        Abstract "ingredient demand" per grain of this salt.
+
+        ``salt_material_source``:
+          - ``preset``: ``AssumedIngredientPerGrain`` (fixed table).
+          - ``salty_skirt``: last Salty Skirt solve (sum of LP ingredient-slot demand per grain);
+            falls back to preset if no solve is loaded.
+        """
+        if salt_material_source == "salty_skirt":
+            scalars = salty_skirt_material_scalar_per_grain_list()
+            if scalars is not None:
+                return float(scalars[int(self)])
+        return float(AssumedIngredientPerGrain[self])
 
 
 """

@@ -140,6 +140,20 @@ class OptionsTab(QtWidgets.QWidget):
             min_value=1,
             max_value=200,
         )
+        query_box_layout.addWidget(QtWidgets.QLabel("Salt → ingredient accounting"), 3, 0)
+        self.salt_material_combo = QtWidgets.QComboBox()
+        self.salt_material_combo.addItem("Preset table", "preset")
+        self.salt_material_combo.addItem("Last Salty Skirt solve", "salty_skirt")
+        self.salt_material_combo.setToolTip(
+            "How salt grains count toward material scores (Query sort). " "Salty Skirt values come from the LP ingredient breakdown per grain after each solve."
+        )
+        query_box_layout.addWidget(self.salt_material_combo, 3, 1, 1, 2)
+        query_box_layout.addWidget(QtWidgets.QLabel("Cost / material basis"), 4, 0)
+        self.recipe_production_combo = QtWidgets.QComboBox()
+        self.recipe_production_combo.addItem("Single craft", "single")
+        self.recipe_production_combo.addItem("Batch craft", "batch")
+        self.recipe_production_combo.setToolTip("Affects Query sort (price / materials), and icon view cost / ing. columns. ")
+        query_box_layout.addWidget(self.recipe_production_combo, 4, 1, 1, 2)
         query_layout.addWidget(query_box)
         query_layout.addStretch(1)
 
@@ -226,6 +240,8 @@ class OptionsTab(QtWidgets.QWidget):
         tabs.addTab(salty_skirt_tab, "Salty Skirt")
 
         self.dropdown_mode.currentIndexChanged.connect(self._on_dropdown_mode_changed)
+        self.salt_material_combo.currentIndexChanged.connect(self._on_salt_material_changed)
+        self.recipe_production_combo.currentIndexChanged.connect(self._on_recipe_production_changed)
         save_default_btn.clicked.connect(self.app.save_current_as_defaults)
         restore_default_btn.clicked.connect(self.app.restore_default_selector_config)
         open_path_btn.clicked.connect(self._open_external_data_path)
@@ -278,6 +294,18 @@ class OptionsTab(QtWidgets.QWidget):
             slider.setValue(value)
             slider.blockSignals(False)
             self._query_edits[key].setText(str(slider.value()))
+        sms = str(getattr(self.app, "salt_material_source", "preset"))
+        self.salt_material_combo.blockSignals(True)
+        sidx = self.salt_material_combo.findData(sms)
+        if sidx >= 0:
+            self.salt_material_combo.setCurrentIndex(sidx)
+        self.salt_material_combo.blockSignals(False)
+        rps = str(getattr(self.app, "recipe_production_scale", "single"))
+        self.recipe_production_combo.blockSignals(True)
+        pidx = self.recipe_production_combo.findData(rps)
+        if pidx >= 0:
+            self.recipe_production_combo.setCurrentIndex(pidx)
+        self.recipe_production_combo.blockSignals(False)
         compat_value = int(getattr(self.app, "compatibility_matrix_cell_px", 32))
         for key, slider in self._compatibility_sliders.items():
             slider.blockSignals(True)
@@ -306,6 +334,14 @@ class OptionsTab(QtWidgets.QWidget):
     def _on_dropdown_mode_changed(self, index: int) -> None:
         mode = str(self.dropdown_mode.itemData(index) or "")
         self.app.set_selector_dropdown_mode(mode)
+
+    def _on_salt_material_changed(self, index: int) -> None:
+        mode = str(self.salt_material_combo.itemData(index) or "preset")
+        self.app.set_salt_material_source(mode)
+
+    def _on_recipe_production_changed(self, index: int) -> None:
+        mode = str(self.recipe_production_combo.itemData(index) or "single")
+        self.app.set_recipe_production_scale(mode)
 
     def _add_size_row(
         self,
